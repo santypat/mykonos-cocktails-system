@@ -14,9 +14,7 @@ services:
         value: false
       - key: JWT_SECRET
         sync: false
-      - key: SUPABASE_URL
-        sync: false
-      - key: SUPABASE_SERVICE_ROLE_KEY
+      - key: DATABASE_URL
         sync: false
       - key: FRONTEND_URL
         sync: false

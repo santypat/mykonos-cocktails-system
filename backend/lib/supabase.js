@@ -1,18 +1,202 @@
-import { createClient } from '@supabase/supabase-js';
+import pg from 'pg';
 
-const supabaseUrl = process.env.SUPABASE_URL;
-const supabaseServiceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+const { Pool } = pg;
 
-if (!supabaseUrl || !supabaseServiceRoleKey) {
-  throw new Error('SUPABASE_URL and SUPABASE_SERVICE_ROLE_KEY are required');
+if (!process.env.DATABASE_URL) {
+  throw new Error('DATABASE_URL is required');
 }
 
-export const supabase = createClient(supabaseUrl, supabaseServiceRoleKey, {
-  auth: {
-    persistSession: false,
-    autoRefreshToken: false
-  }
+const pool = new Pool({
+  connectionString: process.env.DATABASE_URL,
+  ssl: process.env.NODE_ENV === 'production'
+    ? { rejectUnauthorized: false }
+    : undefined
 });
+
+const TABLES = new Set([
+  'app_users',
+  'inventory',
+  'products',
+  'sales',
+  'movements',
+  'shifts'
+]);
+
+function assertTable(table) {
+  if (!TABLES.has(table)) {
+    throw new Error(`Invalid table: ${table}`);
+  }
+}
+
+function jsonColumnsFor(table) {
+  if (table === 'products') return new Set(['preparation']);
+  if (table === 'sales') return new Set(['items']);
+  return new Set();
+}
+
+function normalizeValue(table, column, value) {
+  if (jsonColumnsFor(table).has(column)) {
+    return JSON.stringify(value ?? []);
+  }
+  return value;
+}
+
+class QueryBuilder {
+  constructor(table) {
+    assertTable(table);
+    this.table = table;
+    this.action = 'select';
+    this.payload = null;
+    this.conditions = [];
+    this.orderBy = null;
+    this.returning = false;
+  }
+
+  select() {
+    this.returning = true;
+    return this;
+  }
+
+  insert(payload) {
+    this.action = 'insert';
+    this.payload = payload;
+    return this;
+  }
+
+  update(payload) {
+    this.action = 'update';
+    this.payload = payload;
+    return this;
+  }
+
+  delete() {
+    this.action = 'delete';
+    return this;
+  }
+
+  eq(column, value) {
+    this.conditions.push({ column, op: '=', value });
+    return this;
+  }
+
+  gte(column, value) {
+    this.conditions.push({ column, op: '>=', value });
+    return this;
+  }
+
+  lte(column, value) {
+    this.conditions.push({ column, op: '<=', value });
+    return this;
+  }
+
+  in(column, values) {
+    this.conditions.push({ column, op: 'in', value: values });
+    return this;
+  }
+
+  order(column, options = {}) {
+    this.orderBy = { column, ascending: options.ascending !== false };
+    return this;
+  }
+
+  async single() {
+    const result = await this.execute();
+    if (result.error) return result;
+    if (!result.data?.length) return { data: null, error: { message: 'Row not found' } };
+    return { data: result.data[0], error: null };
+  }
+
+  async maybeSingle() {
+    const result = await this.execute();
+    if (result.error) return result;
+    return { data: result.data?.[0] || null, error: null };
+  }
+
+  async throwOnError() {
+    const result = await this.execute();
+    if (result.error) throw result.error;
+    return result;
+  }
+
+  then(resolve, reject) {
+    return this.execute().then(resolve, reject);
+  }
+
+  buildWhere(params) {
+    if (!this.conditions.length) return '';
+
+    const parts = this.conditions.map((condition) => {
+      if (condition.op === 'in') {
+        const placeholders = condition.value.map((value) => {
+          params.push(value);
+          return `$${params.length}`;
+        });
+        return `${condition.column} in (${placeholders.join(', ')})`;
+      }
+
+      params.push(condition.value);
+      return `${condition.column} ${condition.op} $${params.length}`;
+    });
+
+    return ` where ${parts.join(' and ')}`;
+  }
+
+  async execute() {
+    try {
+      const params = [];
+      let sql = '';
+
+      if (this.action === 'select') {
+        sql = `select * from ${this.table}${this.buildWhere(params)}`;
+        if (this.orderBy) {
+          sql += ` order by ${this.orderBy.column} ${this.orderBy.ascending ? 'asc' : 'desc'}`;
+        }
+      }
+
+      if (this.action === 'insert') {
+        const payload = Array.isArray(this.payload) ? this.payload : [this.payload];
+        const columns = Object.keys(payload[0] || {});
+        const valuesSql = payload.map((row) => {
+          const placeholders = columns.map((column) => {
+            params.push(normalizeValue(this.table, column, row[column]));
+            return `$${params.length}`;
+          });
+          return `(${placeholders.join(', ')})`;
+        });
+
+        sql = `insert into ${this.table} (${columns.join(', ')}) values ${valuesSql.join(', ')}`;
+        if (this.returning) sql += ' returning *';
+      }
+
+      if (this.action === 'update') {
+        const columns = Object.keys(this.payload || {});
+        const setSql = columns.map((column) => {
+          params.push(normalizeValue(this.table, column, this.payload[column]));
+          return `${column} = $${params.length}`;
+        });
+
+        sql = `update ${this.table} set ${setSql.join(', ')}${this.buildWhere(params)}`;
+        if (this.returning) sql += ' returning *';
+      }
+
+      if (this.action === 'delete') {
+        sql = `delete from ${this.table}${this.buildWhere(params)}`;
+        if (this.returning) sql += ' returning *';
+      }
+
+      const result = await pool.query(sql, params);
+      return { data: result.rows, error: null };
+    } catch (error) {
+      return { data: null, error };
+    }
+  }
+}
+
+export const supabase = {
+  from(table) {
+    return new QueryBuilder(table);
+  }
+};
 
 export const mapUser = (row) => row && ({
   _id: row.id,

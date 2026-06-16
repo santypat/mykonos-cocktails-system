@@ -1,23 +1,19 @@
-# Deploy gratis: Mykonos Cocktails con Netlify, Render y Supabase
+# Deploy gratis: Mykonos Cocktails con Netlify, Render y Neon
 
-## 1. Supabase
+## 1. Neon PostgreSQL
 
-1. Crea un proyecto gratuito en Supabase.
-2. Entra a `SQL Editor`.
-3. Copia y ejecuta completo el archivo:
+1. Crea cuenta en Neon con GitHub: `https://neon.com`.
+2. Crea un proyecto gratis llamado `mykonos-cocktails`.
+3. Abre el editor SQL.
+4. Copia y ejecuta completo:
 
 ```txt
 supabase/schema.sql
 ```
 
-4. Ve a `Project Settings > API` y copia:
+El archivo se llama `supabase/schema.sql` porque originalmente se preparo para PostgreSQL/Supabase, pero tambien funciona en Neon.
 
-```txt
-Project URL
-service_role key
-```
-
-La `service_role key` solo va en Render, nunca en Netlify ni en el frontend.
+5. Copia el `DATABASE_URL` de Neon.
 
 ## 2. Backend en Render
 
@@ -32,8 +28,7 @@ Start command: npm start
 Variables de entorno:
 
 ```env
-SUPABASE_URL=https://TU-PROYECTO.supabase.co
-SUPABASE_SERVICE_ROLE_KEY=tu_service_role_key
+DATABASE_URL=postgresql://USER:PASSWORD@HOST.neon.tech/DB?sslmode=require
 JWT_SECRET=un_secreto_largo_y_aleatorio
 JWT_EXPIRE=7d
 NODE_ENV=production
@@ -46,19 +41,19 @@ INIT_ADMIN_NAME=Administrador Principal
 
 ## 3. Crear admin inicial
 
-En Render puedes abrir una Shell del servicio y ejecutar:
+En Render, abre la Shell del servicio y ejecuta:
 
 ```txt
 npm run create-admin
 ```
 
-Eso crea o actualiza el usuario:
+Eso crea o actualiza:
 
 ```txt
 admin / admin123
 ```
 
-Cambia esa contraseña desde el panel apenas confirmes que todo funciona.
+Cambia esa contrasena desde el panel cuando todo funcione.
 
 ## 4. Frontend en Netlify
 
@@ -83,12 +78,12 @@ El archivo `frontend/netlify.toml` ya incluye redireccion SPA para `/login`, `/s
 
 Por ahora las imagenes subidas se guardan en `backend/uploads`. En Render gratis ese almacenamiento puede no ser permanente.
 
-Para produccion estable, la mejora recomendada es migrar imagenes a Supabase Storage o Cloudinary Free.
+Para produccion estable, la mejora recomendada es migrar imagenes a Cloudinary Free.
 
 ## 6. Checklist
 
-- Ejecutaste `supabase/schema.sql`.
-- Render tiene `SUPABASE_URL` y `SUPABASE_SERVICE_ROLE_KEY`.
+- Ejecutaste `supabase/schema.sql` en Neon.
+- Render tiene `DATABASE_URL`.
 - Render responde `/api/health`.
 - Ejecutaste `npm run create-admin` en Render.
 - Netlify tiene `VITE_API_URL` apuntando a Render.

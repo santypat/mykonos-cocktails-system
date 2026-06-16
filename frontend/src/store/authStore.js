@@ -29,7 +29,12 @@ const useAuthStore = create(
       }
     }),
     {
-      name: 'mykonos-auth'
+      name: 'mykonos-auth',
+      partialize: (state) => ({
+        user: state.user,
+        token: state.token,
+        isAuthenticated: state.isAuthenticated
+      })
     }
   )
 );

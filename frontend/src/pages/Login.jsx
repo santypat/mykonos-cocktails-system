@@ -31,9 +31,9 @@ function Login() {
       
       // Redirigir según el rol
       if (data.user.role === 'admin') {
-        navigate('/admin');
+        navigate('/admin', { replace: true });
       } else {
-        navigate('/seller');
+        navigate('/seller', { replace: true });
       }
     } catch (error) {
       console.error('Error en login:', error);

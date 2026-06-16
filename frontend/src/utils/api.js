@@ -21,9 +21,13 @@ api.interceptors.request.use(
   (config) => {
     const authData = localStorage.getItem('mykonos-auth');
     if (authData) {
-      const { state } = JSON.parse(authData);
-      if (state.token) {
-        config.headers.Authorization = `Bearer ${state.token}`;
+      try {
+        const { state } = JSON.parse(authData);
+        if (state?.token) {
+          config.headers.Authorization = `Bearer ${state.token}`;
+        }
+      } catch {
+        localStorage.removeItem('mykonos-auth');
       }
     }
     return config;

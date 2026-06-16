@@ -1,0 +1,122 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+@layer base {
+  body {
+    @apply bg-dark-900 text-white antialiased;
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+  }
+
+  * {
+    @apply border-dark-600;
+  }
+}
+
+@layer components {
+  .neon-text-cyan {
+    color: #00F0FF;
+    text-shadow: 0 0 10px #00F0FF, 0 0 20px #00F0FF;
+  }
+
+  .neon-text-pink {
+    color: #FF006E;
+    text-shadow: 0 0 10px #FF006E, 0 0 20px #FF006E;
+  }
+
+  .neon-text-gold {
+    color: #D4AF37;
+    text-shadow: 0 0 10px #D4AF37, 0 0 20px #D4AF37;
+  }
+
+  .neon-text-purple {
+    color: #BD00FF;
+    text-shadow: 0 0 10px #BD00FF, 0 0 20px #BD00FF;
+  }
+
+  .neon-border-cyan {
+    border-color: #00F0FF;
+    box-shadow: 0 0 5px #00F0FF;
+  }
+
+  .neon-border-pink {
+    border-color: #FF006E;
+    box-shadow: 0 0 5px #FF006E;
+  }
+
+  .neon-border-gold {
+    border-color: #D4AF37;
+    box-shadow: 0 0 5px #D4AF37;
+  }
+
+  .btn-neon {
+    @apply px-6 py-3 rounded-lg font-semibold transition-all duration-300 transform hover:scale-105;
+  }
+
+  .btn-neon-cyan {
+    @apply btn-neon bg-transparent border-2 border-neon-cyan text-neon-cyan hover:bg-neon-cyan hover:text-black;
+    box-shadow: 0 0 10px #00F0FF;
+  }
+
+  .btn-neon-pink {
+    @apply btn-neon bg-transparent border-2 border-neon-pink text-neon-pink hover:bg-neon-pink hover:text-white;
+    box-shadow: 0 0 10px #FF006E;
+  }
+
+  .btn-neon-gold {
+    @apply btn-neon bg-transparent border-2 border-neon-gold text-neon-gold hover:bg-neon-gold hover:text-black;
+    box-shadow: 0 0 10px #D4AF37;
+  }
+
+  .card-neon {
+    @apply bg-dark-800 rounded-xl p-6 border border-dark-600;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.3);
+  }
+
+  .input-neon {
+    @apply bg-dark-700 border-2 border-dark-600 rounded-lg px-4 py-3 text-white placeholder-gray-400 focus:outline-none focus:border-neon-cyan transition-colors;
+  }
+
+  .input-neon:focus {
+    box-shadow: 0 0 10px rgba(0, 240, 255, 0.3);
+  }
+
+  .glass-morphism {
+    background: rgba(26, 26, 26, 0.7);
+    backdrop-filter: blur(10px);
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+}
+
+/* Scrollbar personalizado */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+
+::-webkit-scrollbar-track {
+  background: #1A1A1A;
+}
+
+::-webkit-scrollbar-thumb {
+  background: #00F0FF;
+  border-radius: 5px;
+}
+
+::-webkit-scrollbar-thumb:hover {
+  background: #00c8d4;
+}
+
+/* Animaciones */
+@keyframes glow {
+  0%, 100% {
+    opacity: 1;
+  }
+  50% {
+    opacity: 0.6;
+  }
+}
+
+.animate-glow {
+  animation: glow 2s ease-in-out infinite;
+}

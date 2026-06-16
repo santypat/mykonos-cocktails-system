@@ -1,6 +1,6 @@
 import dotenv from 'dotenv';
-import mongoose from 'mongoose';
-import User from '../models/User.js';
+import bcrypt from 'bcryptjs';
+import { supabase, requireRow } from '../lib/supabase.js';
 
 dotenv.config();
 
@@ -9,38 +9,43 @@ const password = process.env.INIT_ADMIN_PASSWORD || 'admin123';
 const fullName = process.env.INIT_ADMIN_NAME || 'Administrador Principal';
 
 async function main() {
-  if (!process.env.MONGODB_URI) {
-    throw new Error('MONGODB_URI is required');
-  }
+  const passwordHash = await bcrypt.hash(password, 10);
+  const existing = requireRow(await supabase
+    .from('app_users')
+    .select('*')
+    .eq('username', username)
+    .maybeSingle());
 
-  await mongoose.connect(process.env.MONGODB_URI);
-
-  const existing = await User.findOne({ username });
   if (existing) {
-    existing.fullName = fullName;
-    existing.role = 'admin';
-    existing.isPrincipal = true;
-    existing.isActive = true;
-    existing.password = password;
-    await existing.save();
+    await supabase
+      .from('app_users')
+      .update({
+        password_hash: passwordHash,
+        full_name: fullName,
+        role: 'admin',
+        is_principal: true,
+        is_active: true
+      })
+      .eq('id', existing.id)
+      .throwOnError();
     console.log(`Admin user updated: ${username}`);
   } else {
-    await User.create({
-      username,
-      password,
-      fullName,
-      role: 'admin',
-      isPrincipal: true,
-      isActive: true
-    });
+    await supabase
+      .from('app_users')
+      .insert({
+        username,
+        password_hash: passwordHash,
+        full_name: fullName,
+        role: 'admin',
+        is_principal: true,
+        is_active: true
+      })
+      .throwOnError();
     console.log(`Admin user created: ${username}`);
   }
-
-  await mongoose.disconnect();
 }
 
-main().catch(async (error) => {
+main().catch((error) => {
   console.error(error);
-  await mongoose.disconnect();
   process.exit(1);
 });

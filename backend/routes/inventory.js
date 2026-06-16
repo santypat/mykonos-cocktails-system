@@ -1,21 +1,22 @@
 import express from 'express';
-import Inventory from '../models/Inventory.js';
 import { protect, adminOnly } from '../middleware/auth.js';
+import { supabase, mapInventory, requireRow } from '../lib/supabase.js';
 
 const router = express.Router();
 
-// Obtener todo el inventario
 router.get('/', protect, async (req, res) => {
   try {
-    const inventory = await Inventory.find().sort('name');
-    res.json(inventory);
+    const inventory = requireRow(await supabase
+      .from('inventory')
+      .select('*')
+      .order('name', { ascending: true }));
+    res.json(inventory.map(mapInventory));
   } catch (error) {
     console.error('Error obteniendo inventario:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Crear insumo
 router.post('/', protect, adminOnly, async (req, res) => {
   try {
     const { name, quantity, unit, minStock } = req.body;
@@ -24,87 +25,86 @@ router.post('/', protect, adminOnly, async (req, res) => {
       return res.status(400).json({ message: 'Nombre y cantidad son requeridos' });
     }
 
-    const existingItem = await Inventory.findOne({ name: name.trim() });
-    if (existingItem) {
-      return res.status(400).json({ message: 'El insumo ya existe' });
-    }
+    const item = requireRow(await supabase
+      .from('inventory')
+      .insert({
+        name: name.trim(),
+        quantity,
+        unit: unit || 'unidades',
+        min_stock: minStock ?? 5
+      })
+      .select('*')
+      .single());
 
-    const item = await Inventory.create({
-      name: name.trim(),
-      quantity,
-      unit: unit || 'unidades',
-      minStock: minStock || 5
-    });
-
-    res.status(201).json(item);
+    res.status(201).json(mapInventory(item));
   } catch (error) {
     console.error('Error creando insumo:', error);
-    res.status(500).json({ message: 'Error del servidor' });
+    res.status(500).json({ message: error.code === '23505' ? 'El insumo ya existe' : 'Error del servidor' });
   }
 });
 
-// Actualizar insumo
 router.put('/:id', protect, adminOnly, async (req, res) => {
   try {
     const { name, quantity, unit, minStock } = req.body;
+    const update = {};
 
-    const item = await Inventory.findById(req.params.id);
-    if (!item) {
-      return res.status(404).json({ message: 'Insumo no encontrado' });
-    }
+    if (name) update.name = name.trim();
+    if (quantity !== undefined) update.quantity = quantity;
+    if (unit) update.unit = unit;
+    if (minStock !== undefined) update.min_stock = minStock;
+    if (quantity !== undefined) update.last_update = new Date().toISOString();
 
-    if (name) item.name = name.trim();
-    if (quantity !== undefined) item.quantity = quantity;
-    if (unit) item.unit = unit;
-    if (minStock !== undefined) item.minStock = minStock;
+    const item = requireRow(await supabase
+      .from('inventory')
+      .update(update)
+      .eq('id', req.params.id)
+      .select('*')
+      .single());
 
-    await item.save();
-    res.json(item);
+    res.json(mapInventory(item));
   } catch (error) {
     console.error('Error actualizando insumo:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Ajustar cantidad (agregar o quitar)
 router.patch('/:id/adjust', protect, adminOnly, async (req, res) => {
   try {
-    const { adjustment } = req.body; // Puede ser positivo (agregar) o negativo (quitar)
+    const { adjustment } = req.body;
 
     if (adjustment === undefined || adjustment === 0) {
-      return res.status(400).json({ message: 'Ajuste inválido' });
+      return res.status(400).json({ message: 'Ajuste invalido' });
     }
 
-    const item = await Inventory.findById(req.params.id);
-    if (!item) {
-      return res.status(404).json({ message: 'Insumo no encontrado' });
-    }
+    const item = requireRow(await supabase
+      .from('inventory')
+      .select('*')
+      .eq('id', req.params.id)
+      .single());
 
-    const newQuantity = item.quantity + adjustment;
-    
+    const newQuantity = Number(item.quantity) + Number(adjustment);
+
     if (newQuantity < 0) {
       return res.status(400).json({ message: 'La cantidad no puede ser negativa' });
     }
 
-    item.quantity = newQuantity;
-    await item.save();
+    const updated = requireRow(await supabase
+      .from('inventory')
+      .update({ quantity: newQuantity, last_update: new Date().toISOString() })
+      .eq('id', req.params.id)
+      .select('*')
+      .single());
 
-    res.json(item);
+    res.json(mapInventory(updated));
   } catch (error) {
     console.error('Error ajustando inventario:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Eliminar insumo
 router.delete('/:id', protect, adminOnly, async (req, res) => {
   try {
-    const item = await Inventory.findById(req.params.id);
-    if (!item) {
-      return res.status(404).json({ message: 'Insumo no encontrado' });
-    }
-
-    await item.deleteOne();
+    await supabase.from('inventory').delete().eq('id', req.params.id).throwOnError();
     res.json({ message: 'Insumo eliminado exitosamente' });
   } catch (error) {
     console.error('Error eliminando insumo:', error);
@@ -112,14 +112,10 @@ router.delete('/:id', protect, adminOnly, async (req, res) => {
   }
 });
 
-// Obtener alertas de stock bajo
 router.get('/alerts/low-stock', protect, async (req, res) => {
   try {
-    const lowStockItems = await Inventory.find({
-      $expr: { $lte: ['$quantity', '$minStock'] }
-    }).sort('quantity');
-
-    res.json(lowStockItems);
+    const inventory = requireRow(await supabase.from('inventory').select('*'));
+    res.json(inventory.map(mapInventory).filter((item) => item.quantity <= item.minStock));
   } catch (error) {
     console.error('Error obteniendo alertas:', error);
     res.status(500).json({ message: 'Error del servidor' });

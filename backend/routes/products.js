@@ -1,16 +1,15 @@
 import express from 'express';
-import Product from '../models/Product.js';
 import { protect, adminOnly } from '../middleware/auth.js';
 import multer from 'multer';
 import path from 'path';
 import { fileURLToPath } from 'url';
+import { supabase, mapInventory, mapProduct, requireRow } from '../lib/supabase.js';
 
 const __filename = fileURLToPath(import.meta.url);
 const __dirname = path.dirname(__filename);
 
 const router = express.Router();
 
-// Configurar multer para subida de imágenes
 const storage = multer.diskStorage({
   destination: (req, file, cb) => {
     cb(null, path.join(__dirname, '../uploads'));
@@ -22,114 +21,124 @@ const storage = multer.diskStorage({
 });
 
 const upload = multer({
-  storage: storage,
-  limits: { fileSize: 5 * 1024 * 1024 }, // 5MB
+  storage,
+  limits: { fileSize: 5 * 1024 * 1024 },
   fileFilter: (req, file, cb) => {
     const allowedTypes = /jpeg|jpg|png|gif|webp/;
     const extname = allowedTypes.test(path.extname(file.originalname).toLowerCase());
     const mimetype = allowedTypes.test(file.mimetype);
-    
-    if (extname && mimetype) {
-      return cb(null, true);
-    }
-    cb(new Error('Solo se permiten imágenes'));
+
+    if (extname && mimetype) return cb(null, true);
+    cb(new Error('Solo se permiten imagenes'));
   }
 });
 
-// Obtener todos los productos
+async function populatePreparation(preparation = []) {
+  const ids = [...new Set(preparation.map((prep) => prep.ingredient).filter(Boolean))];
+  if (!ids.length) return preparation;
+
+  const inventory = requireRow(await supabase
+    .from('inventory')
+    .select('*')
+    .in('id', ids));
+
+  const byId = new Map(inventory.map((item) => [item.id, mapInventory(item)]));
+  return preparation.map((prep) => ({
+    ...prep,
+    ingredient: byId.get(prep.ingredient) || prep.ingredient
+  }));
+}
+
+async function mapProductWithPreparation(row) {
+  return mapProduct(row, await populatePreparation(row.preparation || []));
+}
+
 router.get('/', protect, async (req, res) => {
   try {
-    const products = await Product.find().populate('preparation.ingredient').sort('-createdAt');
-    res.json(products);
+    const rows = requireRow(await supabase
+      .from('products')
+      .select('*')
+      .order('created_at', { ascending: false }));
+    res.json(await Promise.all(rows.map(mapProductWithPreparation)));
   } catch (error) {
     console.error('Error obteniendo productos:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Obtener productos activos (para vendedores)
 router.get('/active', protect, async (req, res) => {
   try {
-    const products = await Product.find({ isActive: true }).sort('name');
-    res.json(products);
+    const products = requireRow(await supabase
+      .from('products')
+      .select('*')
+      .eq('is_active', true)
+      .order('name', { ascending: true }));
+    res.json(products.map((product) => mapProduct(product)));
   } catch (error) {
     console.error('Error obteniendo productos activos:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Crear producto
 router.post('/', protect, adminOnly, upload.single('image'), async (req, res) => {
   try {
     const { name, price, preparation, category } = req.body;
+    const parsedPreparation = preparation ? JSON.parse(preparation) : [];
 
     const productData = {
       name,
-      price: parseFloat(price),
+      price: Number(price),
       category: category || 'Granizados',
-      preparation: preparation ? JSON.parse(preparation) : [],
-      isActive: true
+      preparation: parsedPreparation,
+      is_active: true
     };
 
     if (req.file) {
       productData.image = `/uploads/${req.file.filename}`;
     }
 
-    const product = await Product.create(productData);
-    await product.populate('preparation.ingredient');
+    const product = requireRow(await supabase
+      .from('products')
+      .insert(productData)
+      .select('*')
+      .single());
 
-    res.status(201).json(product);
+    res.status(201).json(await mapProductWithPreparation(product));
   } catch (error) {
     console.error('Error creando producto:', error);
     res.status(500).json({ message: 'Error del servidor', error: error.message });
   }
 });
 
-// Actualizar producto
 router.put('/:id', protect, adminOnly, upload.single('image'), async (req, res) => {
   try {
     const { name, price, preparation, isActive, category } = req.body;
+    const update = {};
 
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      return res.status(404).json({ message: 'Producto no encontrado' });
-    }
+    if (name) update.name = name;
+    if (price !== undefined) update.price = Number(price);
+    if (category) update.category = category;
+    if (preparation) update.preparation = JSON.parse(preparation);
+    if (isActive !== undefined) update.is_active = isActive === true || isActive === 'true';
+    if (req.file) update.image = `/uploads/${req.file.filename}`;
 
-    product.name = name || product.name;
-    product.price = price ? parseFloat(price) : product.price;
-    product.category = category || product.category;
-    
-    if (preparation) {
-      product.preparation = JSON.parse(preparation);
-    }
-    
-    if (isActive !== undefined) {
-      product.isActive = isActive;
-    }
+    const product = requireRow(await supabase
+      .from('products')
+      .update(update)
+      .eq('id', req.params.id)
+      .select('*')
+      .single());
 
-    if (req.file) {
-      product.image = `/uploads/${req.file.filename}`;
-    }
-
-    await product.save();
-    await product.populate('preparation.ingredient');
-
-    res.json(product);
+    res.json(await mapProductWithPreparation(product));
   } catch (error) {
     console.error('Error actualizando producto:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Eliminar producto
 router.delete('/:id', protect, adminOnly, async (req, res) => {
   try {
-    const product = await Product.findById(req.params.id);
-    if (!product) {
-      return res.status(404).json({ message: 'Producto no encontrado' });
-    }
-
-    await product.deleteOne();
+    await supabase.from('products').delete().eq('id', req.params.id).throwOnError();
     res.json({ message: 'Producto eliminado exitosamente' });
   } catch (error) {
     console.error('Error eliminando producto:', error);

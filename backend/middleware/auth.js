@@ -1,5 +1,5 @@
 import jwt from 'jsonwebtoken';
-import User from '../models/User.js';
+import { supabase, mapUser, requireRow } from '../lib/supabase.js';
 
 export const protect = async (req, res, next) => {
   try {
@@ -14,20 +14,25 @@ export const protect = async (req, res, next) => {
     }
 
     const decoded = jwt.verify(token, process.env.JWT_SECRET);
-    req.user = await User.findById(decoded.id).select('-password');
+    const user = requireRow(await supabase
+      .from('app_users')
+      .select('*')
+      .eq('id', decoded.id)
+      .single());
 
-    if (!req.user) {
+    if (!user) {
       return res.status(401).json({ message: 'Usuario no encontrado' });
     }
 
-    if (!req.user.isActive) {
+    if (!user.is_active) {
       return res.status(401).json({ message: 'Usuario inactivo' });
     }
 
+    req.user = mapUser(user);
     next();
   } catch (error) {
-    console.error('Error en autenticación:', error);
-    res.status(401).json({ message: 'No autorizado, token inválido' });
+    console.error('Error en autenticacion:', error);
+    res.status(401).json({ message: 'No autorizado, token invalido' });
   }
 };
 

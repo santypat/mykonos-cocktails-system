@@ -1,11 +1,9 @@
 import express from 'express';
 import cors from 'cors';
 import dotenv from 'dotenv';
-import mongoose from 'mongoose';
 import path from 'path';
 import { fileURLToPath } from 'url';
 
-// Importar rutas
 import authRoutes from './routes/auth.js';
 import productRoutes from './routes/products.js';
 import saleRoutes from './routes/sales.js';
@@ -26,18 +24,14 @@ const allowedOrigins = (process.env.FRONTEND_URL || 'http://localhost:5173')
   .map((origin) => origin.trim())
   .filter(Boolean);
 
-// Middlewares
 app.use(cors({
   origin: allowedOrigins,
   credentials: true
 }));
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
-
-// Servir archivos estáticos (imágenes de productos)
 app.use('/uploads', express.static(path.join(__dirname, 'uploads')));
 
-// Rutas
 app.use('/api/auth', authRoutes);
 app.use('/api/products', productRoutes);
 app.use('/api/sales', saleRoutes);
@@ -47,39 +41,23 @@ app.use('/api/users', userRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/shifts', shiftRoutes);
 
-// Ruta de prueba
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Mykonos API funcionando correctamente' });
 });
 
-// Manejo de errores global
 app.use((err, req, res, next) => {
   console.error(err.stack);
-  res.status(500).json({ 
-    message: 'Error del servidor', 
+  res.status(500).json({
+    message: 'Error del servidor',
     error: process.env.NODE_ENV === 'development' ? err.message : 'Error interno'
   });
 });
 
-// Conexión a MongoDB
-const connectDB = async () => {
-  try {
-    await mongoose.connect(process.env.MONGODB_URI);
-    console.log('✅ MongoDB conectado exitosamente');
-  } catch (error) {
-    console.error('❌ Error conectando a MongoDB:', error.message);
-    process.exit(1);
-  }
-};
-
-// Iniciar servidor
 const PORT = process.env.PORT || 5000;
 
-connectDB().then(() => {
-  app.listen(PORT, () => {
-    console.log(`🚀 Servidor corriendo en puerto ${PORT}`);
-    console.log(`🌐 Environment: ${process.env.NODE_ENV}`);
-  });
+app.listen(PORT, () => {
+  console.log(`Servidor corriendo en puerto ${PORT}`);
+  console.log(`Environment: ${process.env.NODE_ENV}`);
 });
 
 export default app;

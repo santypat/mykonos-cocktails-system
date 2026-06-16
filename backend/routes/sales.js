@@ -1,13 +1,9 @@
 import express from 'express';
-import Sale from '../models/Sale.js';
-import Product from '../models/Product.js';
-import Inventory from '../models/Inventory.js';
-import Shift from '../models/Shift.js';
 import { protect } from '../middleware/auth.js';
+import { supabase, mapInventory, mapProduct, mapSale, requireRow } from '../lib/supabase.js';
 
 const router = express.Router();
 
-// Crear venta
 router.post('/', protect, async (req, res) => {
   try {
     const { items, paymentMethod } = req.body;
@@ -20,10 +16,12 @@ router.post('/', protect, async (req, res) => {
       return res.status(400).json({ message: 'Metodo de pago invalido' });
     }
 
-    const activeShift = await Shift.findOne({
-      user: req.user._id,
-      isActive: true
-    });
+    const activeShift = requireRow(await supabase
+      .from('shifts')
+      .select('*')
+      .eq('user_id', req.user._id)
+      .eq('is_active', true)
+      .maybeSingle());
 
     if (!activeShift) {
       return res.status(400).json({ message: 'Debes iniciar turno primero' });
@@ -40,29 +38,26 @@ router.post('/', protect, async (req, res) => {
         return res.status(400).json({ message: 'Cantidad invalida' });
       }
 
-      const product = await Product.findById(item.product).populate('preparation.ingredient');
+      const productRow = requireRow(await supabase
+        .from('products')
+        .select('*')
+        .eq('id', item.product)
+        .single());
 
-      if (!product) {
-        return res.status(404).json({ message: `Producto ${item.product} no encontrado` });
-      }
+      const product = mapProduct(productRow);
 
       if (!product.isActive) {
         return res.status(400).json({ message: `Producto ${product.name} no esta disponible` });
       }
 
-      for (const prep of product.preparation) {
-        const ingredientId = prep.ingredient?._id?.toString();
-
-        if (!ingredientId) {
-          return res.status(400).json({ message: `Insumo no encontrado para ${product.name}` });
-        }
-
+      for (const prep of product.preparation || []) {
+        const ingredientId = prep.ingredient;
         const previous = inventoryRequirements.get(ingredientId) || {
           quantity: 0,
           productNames: new Set()
         };
 
-        previous.quantity += prep.quantity * quantity;
+        previous.quantity += Number(prep.quantity) * quantity;
         previous.productNames.add(product.name);
         inventoryRequirements.set(ingredientId, previous);
       }
@@ -80,11 +75,11 @@ router.post('/', protect, async (req, res) => {
     }
 
     for (const [ingredientId, requirement] of inventoryRequirements) {
-      const ingredient = await Inventory.findById(ingredientId);
-
-      if (!ingredient) {
-        return res.status(400).json({ message: 'Insumo no encontrado' });
-      }
+      const ingredient = mapInventory(requireRow(await supabase
+        .from('inventory')
+        .select('*')
+        .eq('id', ingredientId)
+        .single()));
 
       if (ingredient.quantity < requirement.quantity) {
         return res.status(400).json({
@@ -94,84 +89,88 @@ router.post('/', protect, async (req, res) => {
     }
 
     for (const [ingredientId, requirement] of inventoryRequirements) {
-      await Inventory.findByIdAndUpdate(ingredientId, {
-        $inc: { quantity: -requirement.quantity },
-        $set: { lastUpdate: new Date() }
-      });
+      const ingredient = mapInventory(requireRow(await supabase
+        .from('inventory')
+        .select('*')
+        .eq('id', ingredientId)
+        .single()));
+
+      await supabase
+        .from('inventory')
+        .update({
+          quantity: ingredient.quantity - requirement.quantity,
+          last_update: new Date().toISOString()
+        })
+        .eq('id', ingredientId)
+        .throwOnError();
     }
 
-    const sale = await Sale.create({
-      items: saleItems,
-      total,
-      paymentMethod,
-      seller: req.user._id,
-      sellerName: req.user.fullName
-    });
+    const invoiceNumber = `MYK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
+    const sale = requireRow(await supabase
+      .from('sales')
+      .insert({
+        items: saleItems,
+        total,
+        payment_method: paymentMethod,
+        seller_id: req.user._id,
+        seller_name: req.user.fullName,
+        invoice_number: invoiceNumber
+      })
+      .select('*')
+      .single());
 
-    activeShift.totalSales += total;
-    activeShift.salesCount += 1;
-    await activeShift.save();
+    await supabase
+      .from('shifts')
+      .update({
+        total_sales: Number(activeShift.total_sales) + total,
+        sales_count: Number(activeShift.sales_count) + 1
+      })
+      .eq('id', activeShift.id)
+      .throwOnError();
 
-    await sale.populate('items.product');
-
-    res.status(201).json(sale);
+    res.status(201).json(mapSale(sale));
   } catch (error) {
     console.error('Error creando venta:', error);
     res.status(500).json({ message: 'Error del servidor', error: error.message });
   }
 });
 
-// Obtener ventas
 router.get('/', protect, async (req, res) => {
   try {
     const { startDate, endDate, seller } = req.query;
+    let query = supabase.from('sales').select('*');
 
-    const filter = {};
-
-    if (startDate || endDate) {
-      filter.date = {};
-      if (startDate) filter.date.$gte = new Date(startDate);
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        filter.date.$lte = end;
-      }
+    if (startDate) query = query.gte('date', new Date(startDate).toISOString());
+    if (endDate) {
+      const end = new Date(endDate);
+      end.setHours(23, 59, 59, 999);
+      query = query.lte('date', end.toISOString());
     }
 
-    if (req.user.role !== 'admin') {
-      filter.seller = req.user._id;
-    } else if (seller) {
-      filter.seller = seller;
-    }
+    if (req.user.role !== 'admin') query = query.eq('seller_id', req.user._id);
+    else if (seller) query = query.eq('seller_id', seller);
 
-    const sales = await Sale.find(filter)
-      .populate('seller', 'fullName')
-      .populate('items.product')
-      .sort('-date');
-
-    res.json(sales);
+    const sales = requireRow(await query.order('date', { ascending: false }));
+    res.json(sales.map(mapSale));
   } catch (error) {
     console.error('Error obteniendo ventas:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Obtener venta por ID
 router.get('/:id', protect, async (req, res) => {
   try {
-    const sale = await Sale.findById(req.params.id)
-      .populate('seller', 'fullName')
-      .populate('items.product');
+    const sale = requireRow(await supabase
+      .from('sales')
+      .select('*')
+      .eq('id', req.params.id)
+      .single());
 
-    if (!sale) {
-      return res.status(404).json({ message: 'Venta no encontrada' });
-    }
-
-    if (req.user.role !== 'admin' && sale.seller.toString() !== req.user._id.toString()) {
+    if (req.user.role !== 'admin' && sale.seller_id !== req.user._id) {
       return res.status(403).json({ message: 'Acceso denegado' });
     }
 
-    res.json(sale);
+    res.json(mapSale(sale));
   } catch (error) {
     console.error('Error obteniendo venta:', error);
     res.status(500).json({ message: 'Error del servidor' });

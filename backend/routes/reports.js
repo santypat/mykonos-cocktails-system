@@ -1,129 +1,103 @@
 import express from 'express';
-import Sale from '../models/Sale.js';
-import Movement from '../models/Movement.js';
-import Product from '../models/Product.js';
-import Inventory from '../models/Inventory.js';
-import User from '../models/User.js';
-import Shift from '../models/Shift.js';
 import { protect, adminOnly } from '../middleware/auth.js';
+import { supabase, mapInventory, mapMovement, mapSale, mapShift, requireRow } from '../lib/supabase.js';
 
 const router = express.Router();
 
-// Dashboard general con métricas clave
-router.get('/dashboard', protect, adminOnly, async (req, res) => {
-  try {
+function parseDateRange({ startDate, endDate }) {
+  const start = startDate ? new Date(startDate) : null;
+  const end = endDate ? new Date(endDate) : null;
+  if (end) end.setHours(23, 59, 59, 999);
+  return { start, end };
+}
 
-const { startDate, endDate } = req.query;
+function inRange(dateValue, start, end) {
+  const date = new Date(dateValue);
+  if (start && date < start) return false;
+  if (end && date > end) return false;
+  return true;
+}
 
-const dateFilter = {};
-
-if (startDate || endDate) {
-
-  dateFilter.date = {};
-
-  if (startDate) {
-    dateFilter.date.$gte = new Date(startDate);
-  }
-
-  if (endDate) {
-
-    const end = new Date(endDate);
-
-    end.setHours(23, 59, 59, 999);
-
-    dateFilter.date.$lte = end;
+function getPeriodStart(period) {
+  const now = new Date();
+  switch (period) {
+    case 'week':
+      now.setDate(now.getDate() - 7);
+      return now;
+    case 'month':
+      now.setMonth(now.getMonth() - 1);
+      return now;
+    case 'year':
+      now.setFullYear(now.getFullYear() - 1);
+      return now;
+    case 'today':
+    default:
+      now.setHours(0, 0, 0, 0);
+      return now;
   }
 }
 
+function getGroupKey(dateValue, groupBy) {
+  const date = new Date(dateValue);
+  switch (groupBy) {
+    case 'hour':
+      return date.getHours();
+    case 'week':
+      return Math.ceil(date.getDate() / 7);
+    case 'month':
+      return date.getMonth() + 1;
+    case 'day':
+    default:
+      return date.getDate();
+  }
+}
 
+router.get('/dashboard', protect, adminOnly, async (req, res) => {
+  try {
+    const { start, end } = parseDateRange(req.query);
+    const sales = requireRow(await supabase.from('sales').select('*')).map(mapSale).filter((sale) => inRange(sale.date, start, end));
+    const movements = requireRow(await supabase.from('movements').select('*')).map(mapMovement).filter((movement) => inRange(movement.date, start, end));
+    const inventory = requireRow(await supabase.from('inventory').select('*')).map(mapInventory);
 
-    // Ventas totales
-    const salesData = await Sale.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: null,
-          totalSales: { $sum: '$total' },
-          salesCount: { $sum: 1 },
-          cashSales: {
-            $sum: { $cond: [{ $eq: ['$paymentMethod', 'cash'] }, '$total', 0] }
-          },
-          transferSales: {
-            $sum: { $cond: [{ $eq: ['$paymentMethod', 'transfer'] }, '$total', 0] }
-          }
-        }
-      }
-    ]);
-
-    const sales = salesData[0] || {
-      totalSales: 0,
-      salesCount: 0,
-      cashSales: 0,
-      transferSales: 0
+    const salesSummary = {
+      totalSales: sales.reduce((sum, sale) => sum + sale.total, 0),
+      salesCount: sales.length,
+      cashSales: sales.filter((sale) => sale.paymentMethod === 'cash').reduce((sum, sale) => sum + sale.total, 0),
+      transferSales: sales.filter((sale) => sale.paymentMethod === 'transfer').reduce((sum, sale) => sum + sale.total, 0)
     };
 
-    // Movimientos
-    const movementsData = await Movement.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: '$type',
-          total: { $sum: '$amount' }
-        }
-      }
-    ]);
-
-    const movements = {
-      income: 0,
-      expense: 0
+    const movementSummary = {
+      income: movements.filter((movement) => movement.type === 'income').reduce((sum, movement) => sum + movement.amount, 0),
+      expense: movements.filter((movement) => movement.type === 'expense').reduce((sum, movement) => sum + movement.amount, 0)
     };
 
-    movementsData.forEach(m => {
-      movements[m._id] = m.total;
+    const productMap = new Map();
+    sales.forEach((sale) => {
+      sale.items.forEach((item) => {
+        const current = productMap.get(item.productName) || { _id: item.productName, quantity: 0, revenue: 0 };
+        current.quantity += Number(item.quantity);
+        current.revenue += Number(item.subtotal);
+        productMap.set(item.productName, current);
+      });
     });
 
-    // Productos más vendidos
-    const topProducts = await Sale.aggregate([
-      { $match: dateFilter },
-      { $unwind: '$items' },
-      {
-        $group: {
-          _id: '$items.productName',
-          quantity: { $sum: '$items.quantity' },
-          revenue: { $sum: '$items.subtotal' }
-        }
-      },
-      { $sort: { quantity: -1 } },
-      { $limit: 5 }
-    ]);
-
-    // Vendedores
-    const sellerPerformance = await Sale.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: '$sellerName',
-          sales: { $sum: 1 },
-          revenue: { $sum: '$total' }
-        }
-      },
-      { $sort: { revenue: -1 } }
-    ]);
-
-    // Inventario bajo
-    const lowStock = await Inventory.find({
-      $expr: { $lte: ['$quantity', '$minStock'] }
-    }).limit(5);
+    const sellerMap = new Map();
+    sales.forEach((sale) => {
+      const current = sellerMap.get(sale.sellerName) || { _id: sale.sellerName, sales: 0, revenue: 0 };
+      current.sales += 1;
+      current.revenue += sale.total;
+      sellerMap.set(sale.sellerName, current);
+    });
 
     res.json({
-      startDate,
-      endDate,
-      sales,
-      movements,
-      topProducts,
-      sellerPerformance,
-      lowStock,
-      netIncome: sales.totalSales + movements.income - movements.expense
+      startDate: req.query.startDate,
+      endDate: req.query.endDate,
+      sales: salesSummary,
+      movements: movementSummary,
+      topProducts: [...productMap.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5),
+      sellerPerformance: [...sellerMap.values()].sort((a, b) => b.revenue - a.revenue),
+      lowStock: inventory.filter((item) => item.quantity <= item.minStock).slice(0, 5),
+      netIncome: salesSummary.totalSales + movementSummary.income - movementSummary.expense
     });
   } catch (error) {
     console.error('Error en dashboard:', error);
@@ -131,74 +105,44 @@ if (startDate || endDate) {
   }
 });
 
-// Reporte de ventas detallado
 router.get('/sales', protect, adminOnly, async (req, res) => {
   try {
     const { period = 'month', groupBy = 'day' } = req.query;
-    
-    const dateFilter = getDateFilter(period);
+    const start = getPeriodStart(period);
+    const sales = requireRow(await supabase.from('sales').select('*')).map(mapSale).filter((sale) => inRange(sale.date, start, null));
 
-    let groupFormat;
-    switch (groupBy) {
-      case 'hour':
-        groupFormat = { $hour: '$date' };
-        break;
-      case 'day':
-        groupFormat = { $dayOfMonth: '$date' };
-        break;
-      case 'week':
-        groupFormat = { $week: '$date' };
-        break;
-      case 'month':
-        groupFormat = { $month: '$date' };
-        break;
-      default:
-        groupFormat = { $dayOfMonth: '$date' };
-    }
+    const periodMap = new Map();
+    sales.forEach((sale) => {
+      const key = getGroupKey(sale.date, groupBy);
+      const current = periodMap.get(key) || { _id: key, totalSales: 0, count: 0, avgSale: 0 };
+      current.totalSales += sale.total;
+      current.count += 1;
+      current.avgSale = current.totalSales / current.count;
+      periodMap.set(key, current);
+    });
 
-    const salesByPeriod = await Sale.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: groupFormat,
-          totalSales: { $sum: '$total' },
-          count: { $sum: 1 },
-          avgSale: { $avg: '$total' }
-        }
-      },
-      { $sort: { _id: 1 } }
-    ]);
+    const paymentMap = new Map();
+    sales.forEach((sale) => {
+      const current = paymentMap.get(sale.paymentMethod) || { _id: sale.paymentMethod, total: 0, count: 0 };
+      current.total += sale.total;
+      current.count += 1;
+      paymentMap.set(sale.paymentMethod, current);
+    });
 
-    // Ventas por método de pago
-    const paymentMethods = await Sale.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: '$paymentMethod',
-          total: { $sum: '$total' },
-          count: { $sum: 1 }
-        }
-      }
-    ]);
-
-    // Productos vendidos
-    const productsSold = await Sale.aggregate([
-      { $match: dateFilter },
-      { $unwind: '$items' },
-      {
-        $group: {
-          _id: '$items.productName',
-          quantity: { $sum: '$items.quantity' },
-          revenue: { $sum: '$items.subtotal' }
-        }
-      },
-      { $sort: { revenue: -1 } }
-    ]);
+    const productsMap = new Map();
+    sales.forEach((sale) => {
+      sale.items.forEach((item) => {
+        const current = productsMap.get(item.productName) || { _id: item.productName, quantity: 0, revenue: 0 };
+        current.quantity += Number(item.quantity);
+        current.revenue += Number(item.subtotal);
+        productsMap.set(item.productName, current);
+      });
+    });
 
     res.json({
-      salesByPeriod,
-      paymentMethods,
-      productsSold
+      salesByPeriod: [...periodMap.values()].sort((a, b) => a._id - b._id),
+      paymentMethods: [...paymentMap.values()],
+      productsSold: [...productsMap.values()].sort((a, b) => b.revenue - a.revenue)
     });
   } catch (error) {
     console.error('Error en reporte de ventas:', error);
@@ -206,66 +150,18 @@ router.get('/sales', protect, adminOnly, async (req, res) => {
   }
 });
 
-// Reporte financiero
 router.get('/financial', protect, adminOnly, async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
-
-const dateFilter = {};
-
-if (startDate || endDate) {
-
-  dateFilter.date = {};
-
-  if (startDate) {
-
-    const start = new Date(startDate);
-
-    start.setHours(0, 0, 0, 0);
-
-    dateFilter.date.$gte = start;
-  }
-
-  if (endDate) {
-
-    const end = new Date(endDate);
-
-    end.setHours(23, 59, 59, 999);
-
-    dateFilter.date.$lte = end;
-  }
-}
-
-    // Ingresos por ventas
-    const salesIncome = await Sale.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: null,
-          total: { $sum: '$total' },
-          cash: {
-            $sum: { $cond: [{ $eq: ['$paymentMethod', 'cash'] }, '$total', 0] }
-          },
-          transfer: {
-            $sum: { $cond: [{ $eq: ['$paymentMethod', 'transfer'] }, '$total', 0] }
-          }
-        }
-      }
-    ]);
-
-    // Otros ingresos/egresos
-    const movements = await Movement.aggregate([
-      { $match: dateFilter },
-      {
-        $group: {
-          _id: { type: '$type', method: '$paymentMethod' },
-          total: { $sum: '$amount' }
-        }
-      }
-    ]);
+    const { start, end } = parseDateRange(req.query);
+    const sales = requireRow(await supabase.from('sales').select('*')).map(mapSale).filter((sale) => inRange(sale.date, start, end));
+    const movements = requireRow(await supabase.from('movements').select('*')).map(mapMovement).filter((movement) => inRange(movement.date, start, end));
 
     const financial = {
-      sales: salesIncome[0] || { total: 0, cash: 0, transfer: 0 },
+      sales: {
+        total: sales.reduce((sum, sale) => sum + sale.total, 0),
+        cash: sales.filter((sale) => sale.paymentMethod === 'cash').reduce((sum, sale) => sum + sale.total, 0),
+        transfer: sales.filter((sale) => sale.paymentMethod === 'transfer').reduce((sum, sale) => sum + sale.total, 0)
+      },
       movements: {
         income: { cash: 0, transfer: 0, total: 0 },
         expense: { cash: 0, transfer: 0, total: 0 }
@@ -273,22 +169,13 @@ if (startDate || endDate) {
       balance: { cash: 0, transfer: 0, total: 0 }
     };
 
-    movements.forEach(m => {
-      financial.movements[m._id.type][m._id.method] += m.total;
-      financial.movements[m._id.type].total += m.total;
+    movements.forEach((movement) => {
+      financial.movements[movement.type][movement.paymentMethod] += movement.amount;
+      financial.movements[movement.type].total += movement.amount;
     });
 
-    // Calcular balance total
-    financial.balance.cash = 
-      financial.sales.cash + 
-      financial.movements.income.cash - 
-      financial.movements.expense.cash;
-    
-    financial.balance.transfer = 
-      financial.sales.transfer + 
-      financial.movements.income.transfer - 
-      financial.movements.expense.transfer;
-    
+    financial.balance.cash = financial.sales.cash + financial.movements.income.cash - financial.movements.expense.cash;
+    financial.balance.transfer = financial.sales.transfer + financial.movements.income.transfer - financial.movements.expense.transfer;
     financial.balance.total = financial.balance.cash + financial.balance.transfer;
 
     res.json(financial);
@@ -298,114 +185,54 @@ if (startDate || endDate) {
   }
 });
 
-// Reporte de inventario
 router.get('/inventory', protect, adminOnly, async (req, res) => {
   try {
-    const inventory = await Inventory.find().sort('quantity');
-
-    const stats = {
+    const inventory = requireRow(await supabase.from('inventory').select('*')).map(mapInventory);
+    res.json({
       totalItems: inventory.length,
-      lowStock: inventory.filter(i => i.quantity <= i.minStock).length,
-      outOfStock: inventory.filter(i => i.quantity === 0).length,
-      items: inventory
-    };
-
-    res.json(stats);
+      lowStock: inventory.filter((item) => item.quantity <= item.minStock).length,
+      outOfStock: inventory.filter((item) => item.quantity === 0).length,
+      items: inventory.sort((a, b) => a.quantity - b.quantity)
+    });
   } catch (error) {
     console.error('Error en reporte de inventario:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Reporte de desempeño de empleados
 router.get('/employees', protect, adminOnly, async (req, res) => {
   try {
-    const { startDate, endDate } = req.query;
-    
-    const filter = {};
-    if (startDate || endDate) {
-      filter.date = {};
-      if (startDate) filter.date.$gte = new Date(startDate);
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        filter.date.$lte = end;
+    const { start, end } = parseDateRange(req.query);
+    const sales = requireRow(await supabase.from('sales').select('*')).map(mapSale).filter((sale) => inRange(sale.date, start, end));
+    const shifts = requireRow(await supabase.from('shifts').select('*')).map(mapShift).filter((shift) => inRange(shift.startTime, start, end));
+
+    const salesMap = new Map();
+    sales.forEach((sale) => {
+      const current = salesMap.get(sale.sellerName) || { _id: { seller: sale.seller, name: sale.sellerName }, totalSales: 0, salesCount: 0, avgSale: 0 };
+      current.totalSales += sale.total;
+      current.salesCount += 1;
+      current.avgSale = current.totalSales / current.salesCount;
+      salesMap.set(sale.sellerName, current);
+    });
+
+    const shiftMap = new Map();
+    shifts.forEach((shift) => {
+      const current = shiftMap.get(shift.userName) || { _id: shift.userName, totalShifts: 0, totalHours: 0 };
+      current.totalShifts += 1;
+      if (shift.endTime) {
+        current.totalHours += (new Date(shift.endTime) - new Date(shift.startTime)) / (1000 * 60 * 60);
       }
-    }
-
-    // Ventas por empleado
-    const salesByEmployee = await Sale.aggregate([
-      { $match: filter },
-      {
-        $group: {
-          _id: { seller: '$seller', name: '$sellerName' },
-          totalSales: { $sum: '$total' },
-          salesCount: { $sum: 1 },
-          avgSale: { $avg: '$total' }
-        }
-      },
-      { $sort: { totalSales: -1 } }
-    ]);
-
-    // Turnos por empleado
-    const shiftFilter = {};
-    if (startDate || endDate) {
-      shiftFilter.startTime = {};
-      if (startDate) shiftFilter.startTime.$gte = new Date(startDate);
-      if (endDate) shiftFilter.startTime.$lte = new Date(endDate);
-    }
-
-    const shiftsByEmployee = await Shift.aggregate([
-      { $match: shiftFilter },
-      {
-        $group: {
-          _id: '$userName',
-          totalShifts: { $sum: 1 },
-          totalHours: {
-            $sum: {
-              $divide: [
-                { $subtract: ['$endTime', '$startTime'] },
-                1000 * 60 * 60
-              ]
-            }
-          }
-        }
-      }
-    ]);
+      shiftMap.set(shift.userName, current);
+    });
 
     res.json({
-      salesByEmployee,
-      shiftsByEmployee
+      salesByEmployee: [...salesMap.values()].sort((a, b) => b.totalSales - a.totalSales),
+      shiftsByEmployee: [...shiftMap.values()]
     });
   } catch (error) {
     console.error('Error en reporte de empleados:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
-
-// Función auxiliar para filtros de fecha
-function getDateFilter(period) {
-  const now = new Date();
-  let startDate;
-
-  switch (period) {
-    case 'today':
-      startDate = new Date(now.setHours(0, 0, 0, 0));
-      break;
-    case 'week':
-      startDate = new Date(now.setDate(now.getDate() - 7));
-      break;
-    case 'month':
-      startDate = new Date(now.setMonth(now.getMonth() - 1));
-      break;
-    case 'year':
-      startDate = new Date(now.setFullYear(now.getFullYear() - 1));
-      break;
-    default:
-      startDate = new Date(now.setHours(0, 0, 0, 0));
-  }
-
-  return { date: { $gte: startDate } };
-}
 
 export default router;

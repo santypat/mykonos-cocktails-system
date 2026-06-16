@@ -1,41 +1,37 @@
 import express from 'express';
-import Movement from '../models/Movement.js';
 import { protect, adminOnly } from '../middleware/auth.js';
+import { supabase, mapMovement, requireRow } from '../lib/supabase.js';
 
 const router = express.Router();
 
-// Obtener todos los movimientos
+function applyDateFilters(query, startDate, endDate) {
+  let next = query;
+  if (startDate) next = next.gte('date', new Date(startDate).toISOString());
+  if (endDate) {
+    const end = new Date(endDate);
+    end.setHours(23, 59, 59, 999);
+    next = next.lte('date', end.toISOString());
+  }
+  return next;
+}
+
 router.get('/', protect, adminOnly, async (req, res) => {
   try {
     const { startDate, endDate, type, paymentMethod } = req.query;
+    let query = supabase.from('movements').select('*');
 
-    const filter = {};
-    
-    if (startDate || endDate) {
-      filter.date = {};
-      if (startDate) filter.date.$gte = new Date(startDate);
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        filter.date.$lte = end;
-      }
-    }
+    query = applyDateFilters(query, startDate, endDate);
+    if (type) query = query.eq('type', type);
+    if (paymentMethod) query = query.eq('payment_method', paymentMethod);
 
-    if (type) filter.type = type;
-    if (paymentMethod) filter.paymentMethod = paymentMethod;
-
-    const movements = await Movement.find(filter)
-      .populate('user', 'fullName')
-      .sort('-date');
-
-    res.json(movements);
+    const movements = requireRow(await query.order('date', { ascending: false }));
+    res.json(movements.map(mapMovement));
   } catch (error) {
     console.error('Error obteniendo movimientos:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Crear movimiento
 router.post('/', protect, adminOnly, async (req, res) => {
   try {
     const { type, amount, paymentMethod, description, category } = req.body;
@@ -44,40 +40,35 @@ router.post('/', protect, adminOnly, async (req, res) => {
       return res.status(400).json({ message: 'Todos los campos son requeridos' });
     }
 
-    const movement = await Movement.create({
-      type,
-      amount,
-      paymentMethod,
-      description,
-      category: category || 'Otros',
-      user: req.user._id,
-      userName: req.user.fullName
-    });
+    const movement = requireRow(await supabase
+      .from('movements')
+      .insert({
+        type,
+        amount,
+        payment_method: paymentMethod,
+        description,
+        category: category || 'Otros',
+        user_id: req.user._id,
+        user_name: req.user.fullName
+      })
+      .select('*')
+      .single());
 
-    res.status(201).json(movement);
+    res.status(201).json(mapMovement(movement));
   } catch (error) {
     console.error('Error creando movimiento:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });
 
-// Obtener balance de caja
 router.get('/balance', protect, adminOnly, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-
-    const filter = {};
-    if (startDate || endDate) {
-      filter.date = {};
-      if (startDate) filter.date.$gte = new Date(startDate);
-      if (endDate) {
-        const end = new Date(endDate);
-        end.setHours(23, 59, 59, 999);
-        filter.date.$lte = end;
-      }
-    }
-
-    const movements = await Movement.find(filter);
+    const movements = requireRow(await applyDateFilters(
+      supabase.from('movements').select('*'),
+      startDate,
+      endDate
+    ));
 
     const balance = {
       cash: { income: 0, expense: 0, total: 0 },
@@ -85,9 +76,9 @@ router.get('/balance', protect, adminOnly, async (req, res) => {
       total: { income: 0, expense: 0, total: 0 }
     };
 
-    movements.forEach(movement => {
+    movements.map(mapMovement).forEach((movement) => {
       const amount = movement.amount;
-      
+
       if (movement.type === 'income') {
         balance[movement.paymentMethod].income += amount;
         balance.total.income += amount;
@@ -108,15 +99,9 @@ router.get('/balance', protect, adminOnly, async (req, res) => {
   }
 });
 
-// Eliminar movimiento
 router.delete('/:id', protect, adminOnly, async (req, res) => {
   try {
-    const movement = await Movement.findById(req.params.id);
-    if (!movement) {
-      return res.status(404).json({ message: 'Movimiento no encontrado' });
-    }
-
-    await movement.deleteOne();
+    await supabase.from('movements').delete().eq('id', req.params.id).throwOnError();
     res.json({ message: 'Movimiento eliminado exitosamente' });
   } catch (error) {
     console.error('Error eliminando movimiento:', error);

@@ -12,9 +12,11 @@ services:
         value: 7d
       - key: ENABLE_INIT_ADMIN
         value: false
-      - key: MONGODB_URI
-        sync: false
       - key: JWT_SECRET
+        sync: false
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_SERVICE_ROLE_KEY
         sync: false
       - key: FRONTEND_URL
         sync: false

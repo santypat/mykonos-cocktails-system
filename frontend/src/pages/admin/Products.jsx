@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
 import { Plus, Edit, Trash2, Power, Image as ImageIcon } from 'lucide-react';
-import api from '../../utils/api';
+import api, { getAssetUrl } from '../../utils/api';
 import toast from 'react-hot-toast';
 
 function AdminProducts() {
@@ -106,7 +106,10 @@ function AdminProducts() {
         name: product.name,
         price: product.price,
         category: product.category,
-        preparation: product.preparation,
+        preparation: product.preparation?.map((prep) => ({
+          ingredient: prep.ingredient?._id || prep.ingredient,
+          quantity: prep.quantity
+        })) || [],
         image: null
       });
     } else {
@@ -170,7 +173,7 @@ function AdminProducts() {
             <div className="relative mb-4">
               {product.image ? (
                 <img
-                  src={`http://localhost:5000${product.image}`}
+                  src={getAssetUrl(product.image)}
                   alt={product.name}
                   className="w-full h-48 object-cover rounded-lg"
                 />

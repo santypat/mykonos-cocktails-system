@@ -12,7 +12,10 @@ import {
   LogOut,
   Clock,
   PlayCircle,
-  StopCircle
+  StopCircle,
+  AlertTriangle,
+  BarChart3,
+  CalendarDays
 } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 import api, { getAssetUrl } from '../utils/api';
@@ -28,6 +31,11 @@ function SellerPanel() {
   const [showInvoice, setShowInvoice] = useState(false);
   const [lastSale, setLastSale] = useState(null);
   const [loading, setLoading] = useState(true);
+  const [report, setReport] = useState(null);
+  const [reportFilters, setReportFilters] = useState(() => {
+    const today = new Date().toISOString().slice(0, 10);
+    return { startDate: today, endDate: today };
+  });
   
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -35,7 +43,12 @@ function SellerPanel() {
   useEffect(() => {
     fetchProducts();
     fetchActiveShift();
+    fetchSellerReport();
   }, []);
+
+  useEffect(() => {
+    fetchSellerReport();
+  }, [reportFilters.startDate, reportFilters.endDate]);
 
   const fetchProducts = async () => {
     try {
@@ -52,6 +65,18 @@ function SellerPanel() {
     try {
       const { data } = await api.get('/shifts/active');
       setShift(data);
+    } catch (error) {
+      console.error('Error:', error);
+    }
+  };
+
+  const fetchSellerReport = async () => {
+    try {
+      const params = new URLSearchParams();
+      if (reportFilters.startDate) params.set('startDate', reportFilters.startDate);
+      if (reportFilters.endDate) params.set('endDate', reportFilters.endDate);
+      const { data } = await api.get(`/reports/seller-summary?${params.toString()}`);
+      setReport(data);
     } catch (error) {
       console.error('Error:', error);
     }
@@ -138,6 +163,8 @@ function SellerPanel() {
       setLastSale(data);
       setShowInvoice(true);
       setCart([]);
+      fetchProducts();
+      fetchSellerReport();
       toast.success('Venta registrada');
     } catch (error) {
       toast.error(error.response?.data?.message || 'Error al registrar venta');
@@ -153,6 +180,8 @@ function SellerPanel() {
     logout();
     navigate('/login');
   };
+
+  const lowStockProducts = products.filter((product) => product.stock?.status === 'low' || product.stock?.status === 'out');
 
   if (loading) {
     return (
@@ -209,6 +238,78 @@ function SellerPanel() {
         </div>
       </div>
 
+      <div className="max-w-7xl mx-auto mb-6 grid grid-cols-1 xl:grid-cols-3 gap-4">
+        <div className="xl:col-span-2 card-neon">
+          <div className="flex items-center justify-between flex-wrap gap-3 mb-4">
+            <h2 className="text-xl font-bold neon-text-cyan flex items-center gap-2">
+              <BarChart3 size={22} />
+              Reporte de ventas
+            </h2>
+            <div className="flex items-center gap-2 flex-wrap">
+              <CalendarDays className="text-neon-cyan" size={18} />
+              <input
+                type="date"
+                value={reportFilters.startDate}
+                onChange={(e) => setReportFilters((current) => ({ ...current, startDate: e.target.value }))}
+                className="input-neon"
+              />
+              <input
+                type="date"
+                value={reportFilters.endDate}
+                onChange={(e) => setReportFilters((current) => ({ ...current, endDate: e.target.value }))}
+                className="input-neon"
+              />
+            </div>
+          </div>
+
+          <div className="grid grid-cols-2 md:grid-cols-4 gap-3">
+            <div className="bg-dark-700 rounded-lg p-4">
+              <p className="text-xs text-gray-400 mb-1">Total vendido</p>
+              <p className="text-2xl font-bold neon-text-green">${(report?.totalSales || 0).toLocaleString()}</p>
+            </div>
+            <div className="bg-dark-700 rounded-lg p-4">
+              <p className="text-xs text-gray-400 mb-1">Ventas</p>
+              <p className="text-2xl font-bold text-white">{report?.salesCount || 0}</p>
+            </div>
+            <div className="bg-dark-700 rounded-lg p-4">
+              <p className="text-xs text-gray-400 mb-1">Efectivo</p>
+              <p className="text-xl font-bold text-neon-cyan">${(report?.cashSales || 0).toLocaleString()}</p>
+            </div>
+            <div className="bg-dark-700 rounded-lg p-4">
+              <p className="text-xs text-gray-400 mb-1">Transferencia</p>
+              <p className="text-xl font-bold text-neon-purple">${(report?.transferSales || 0).toLocaleString()}</p>
+            </div>
+          </div>
+        </div>
+
+        <div className={`card-neon ${lowStockProducts.length ? 'border-2 border-neon-pink' : ''}`}>
+          <h2 className="text-lg font-bold neon-text-pink flex items-center gap-2 mb-3">
+            <AlertTriangle size={20} />
+            Alertas de stock
+          </h2>
+          <div className="space-y-2 max-h-44 overflow-y-auto">
+            {lowStockProducts.map((product) => (
+              <div key={product._id} className="bg-dark-700 rounded-lg p-3">
+                <p className="font-medium">{product.name}</p>
+                <p className={`text-sm ${product.stock?.status === 'out' ? 'text-red-400' : 'text-neon-pink'}`}>
+                  {product.stock?.status === 'out'
+                    ? 'Sin unidades disponibles'
+                    : `${product.stock?.availableUnits ?? 0} unidades estimadas disponibles`}
+                </p>
+                {product.stock?.warnings?.slice(0, 2).map((warning) => (
+                  <p key={warning.ingredientId} className="text-xs text-gray-400">
+                    {warning.ingredientName}: {warning.quantity} {warning.unit} / min {warning.minStock}
+                  </p>
+                ))}
+              </div>
+            ))}
+            {!lowStockProducts.length && (
+              <p className="text-gray-400 text-sm">Sin alertas por ahora</p>
+            )}
+          </div>
+        </div>
+      </div>
+
       <div className="max-w-7xl mx-auto grid grid-cols-1 lg:grid-cols-3 gap-6">
         {/* Productos */}
         <div className="lg:col-span-2">
@@ -221,7 +322,7 @@ function SellerPanel() {
               <button
                 key={product._id}
                 onClick={() => addToCart(product)}
-                disabled={!shift}
+                disabled={!shift || product.stock?.status === 'out'}
                 className="card-neon hover:scale-105 transition-transform text-left disabled:opacity-50 disabled:cursor-not-allowed"
               >
                 {product.image ? (
@@ -237,9 +338,24 @@ function SellerPanel() {
                 )}
                 
                 <h3 className="font-bold mb-2">{product.name}</h3>
+                {product.stock?.status !== 'ok' && (
+                  <div className={`mb-2 text-xs rounded-lg px-2 py-1 inline-flex items-center gap-1 ${
+                    product.stock?.status === 'out'
+                      ? 'bg-red-500 bg-opacity-20 text-red-300'
+                      : 'bg-neon-pink bg-opacity-20 text-neon-pink'
+                  }`}>
+                    <AlertTriangle size={13} />
+                    {product.stock?.status === 'out' ? 'Sin stock' : 'Stock bajo'}
+                  </div>
+                )}
                 <p className="text-neon-green text-xl font-bold">
                   ${product.price.toLocaleString()}
                 </p>
+                {product.stock?.availableUnits !== null && product.stock?.availableUnits !== undefined && (
+                  <p className="text-xs text-gray-500 mt-1">
+                    Disp: {product.stock.availableUnits}
+                  </p>
+                )}
               </button>
             ))}
           </div>

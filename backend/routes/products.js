@@ -53,6 +53,44 @@ async function mapProductWithPreparation(row) {
   return mapProduct(row, await populatePreparation(row.preparation || []));
 }
 
+function getProductStockStatus(product) {
+  const ingredients = product.preparation || [];
+
+  if (!ingredients.length) {
+    return {
+      canSell: true,
+      status: 'ok',
+      availableUnits: null,
+      warnings: []
+    };
+  }
+
+  const availableUnits = ingredients.map((prep) => {
+    const ingredient = prep.ingredient;
+    const required = Number(prep.quantity || 0);
+    if (!ingredient || !required) return Infinity;
+    return Math.floor(Number(ingredient.quantity || 0) / required);
+  });
+
+  const minAvailable = Math.min(...availableUnits);
+  const warnings = ingredients
+    .filter((prep) => prep.ingredient && Number(prep.ingredient.quantity) <= Number(prep.ingredient.minStock))
+    .map((prep) => ({
+      ingredientId: prep.ingredient._id,
+      ingredientName: prep.ingredient.name,
+      quantity: prep.ingredient.quantity,
+      minStock: prep.ingredient.minStock,
+      unit: prep.ingredient.unit
+    }));
+
+  return {
+    canSell: minAvailable > 0,
+    status: minAvailable <= 0 ? 'out' : warnings.length ? 'low' : 'ok',
+    availableUnits: Number.isFinite(minAvailable) ? minAvailable : null,
+    warnings
+  };
+}
+
 router.get('/', protect, async (req, res) => {
   try {
     const rows = requireRow(await supabase
@@ -73,7 +111,11 @@ router.get('/active', protect, async (req, res) => {
       .select('*')
       .eq('is_active', true)
       .order('name', { ascending: true }));
-    res.json(products.map((product) => mapProduct(product)));
+    const mapped = await Promise.all(products.map(mapProductWithPreparation));
+    res.json(mapped.map((product) => ({
+      ...product,
+      stock: getProductStockStatus(product)
+    })));
   } catch (error) {
     console.error('Error obteniendo productos activos:', error);
     res.status(500).json({ message: 'Error del servidor' });

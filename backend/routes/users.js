@@ -11,7 +11,16 @@ router.get('/', protect, adminOnly, async (req, res) => {
       .from('app_users')
       .select('*')
       .order('created_at', { ascending: false }));
-    res.json(users.map(mapUser));
+    const activeShifts = requireRow(await supabase
+      .from('shifts')
+      .select('*')
+      .eq('is_active', true));
+    const activeShiftUsers = new Set(activeShifts.map((shift) => shift.user_id));
+
+    res.json(users.map((user) => ({
+      ...mapUser(user),
+      isOnShift: activeShiftUsers.has(user.id)
+    })));
   } catch (error) {
     console.error('Error obteniendo usuarios:', error);
     res.status(500).json({ message: 'Error del servidor' });

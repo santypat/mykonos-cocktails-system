@@ -59,14 +59,23 @@ function AdminUsers() {
                 <p className="text-gray-400">@{user.username}</p>
               </div>
               {!user.isPrincipal && (
-                <button onClick={() => toggleActive(user)} className={`px-3 py-1 rounded text-xs ${user.isActive ? 'bg-neon-green bg-opacity-20 text-neon-green' : 'bg-gray-600 text-gray-300'}`}>
-                  {user.isActive ? 'Activo' : 'Inactivo'}
+                <button onClick={() => toggleActive(user)} className={`px-3 py-1 rounded text-xs ${user.isActive ? 'bg-neon-cyan bg-opacity-20 text-neon-cyan' : 'bg-gray-600 text-gray-300'}`}>
+                  {user.isActive ? 'Cuenta habilitada' : 'Cuenta inactiva'}
                 </button>
               )}
             </div>
             <p className={`text-sm ${user.role === 'admin' ? 'text-neon-cyan' : 'text-gray-400'}`}>
               {user.role === 'admin' ? 'Administrador' : 'Vendedor'}
             </p>
+            {user.role === 'seller' && (
+              <div className={`mt-3 inline-flex px-3 py-1 rounded-full text-xs ${
+                user.isOnShift
+                  ? 'bg-neon-green bg-opacity-20 text-neon-green'
+                  : 'bg-dark-600 text-gray-400'
+              }`}>
+                {user.isOnShift ? 'Activo en turno' : 'Inactivo fuera de turno'}
+              </div>
+            )}
           </div>
         ))}
       </div>

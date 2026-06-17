@@ -105,6 +105,42 @@ router.get('/dashboard', protect, adminOnly, async (req, res) => {
   }
 });
 
+router.get('/seller-summary', protect, async (req, res) => {
+  try {
+    const { start, end } = parseDateRange(req.query);
+    const sales = requireRow(await supabase.from('sales').select('*'))
+      .map(mapSale)
+      .filter((sale) => sale.seller === req.user._id)
+      .filter((sale) => inRange(sale.date, start, end));
+
+    const productMap = new Map();
+    sales.forEach((sale) => {
+      sale.items.forEach((item) => {
+        const current = productMap.get(item.productName) || { name: item.productName, quantity: 0, revenue: 0 };
+        current.quantity += Number(item.quantity);
+        current.revenue += Number(item.subtotal);
+        productMap.set(item.productName, current);
+      });
+    });
+
+    const summary = {
+      totalSales: sales.reduce((sum, sale) => sum + sale.total, 0),
+      salesCount: sales.length,
+      cashSales: sales.filter((sale) => sale.paymentMethod === 'cash').reduce((sum, sale) => sum + sale.total, 0),
+      transferSales: sales.filter((sale) => sale.paymentMethod === 'transfer').reduce((sum, sale) => sum + sale.total, 0),
+      productsSold: [...productMap.values()].sort((a, b) => b.quantity - a.quantity),
+      latestSales: sales
+        .sort((a, b) => new Date(b.date) - new Date(a.date))
+        .slice(0, 8)
+    };
+
+    res.json(summary);
+  } catch (error) {
+    console.error('Error en reporte de vendedor:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+});
+
 router.get('/sales', protect, adminOnly, async (req, res) => {
   try {
     const { period = 'month', groupBy = 'day' } = req.query;

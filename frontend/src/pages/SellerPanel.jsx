@@ -72,7 +72,7 @@ function SellerPanel() {
       fetchSellerReport();
     };
 
-    const intervalId = window.setInterval(refreshSellerState, 10000);
+    const intervalId = window.setInterval(refreshSellerState, 30000);
     window.addEventListener('focus', refreshSellerState);
 
     return () => {

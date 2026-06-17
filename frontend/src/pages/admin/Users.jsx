@@ -9,7 +9,7 @@ function AdminUsers() {
 
   useEffect(() => {
     fetchUsers();
-    const intervalId = window.setInterval(fetchUsers, 10000);
+    const intervalId = window.setInterval(fetchUsers, 30000);
     window.addEventListener('focus', fetchUsers);
 
     return () => {

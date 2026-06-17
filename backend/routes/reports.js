@@ -1,6 +1,6 @@
 import express from 'express';
 import { protect, adminOnly } from '../middleware/auth.js';
-import { supabase, mapInventory, mapMovement, mapSale, mapShift, requireRow } from '../lib/supabase.js';
+import { supabase, mapInventory, mapMovement, mapProduct, mapSale, mapShift, mapUser, requireRow } from '../lib/supabase.js';
 
 const router = express.Router();
 
@@ -50,6 +50,49 @@ function getGroupKey(dateValue, groupBy) {
     default:
       return date.getDate();
   }
+}
+
+function escapeXml(value) {
+  return String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&apos;');
+}
+
+function excelCell(value) {
+  if (typeof value === 'number' && Number.isFinite(value)) {
+    return `<Cell><Data ss:Type="Number">${value}</Data></Cell>`;
+  }
+  return `<Cell><Data ss:Type="String">${escapeXml(value)}</Data></Cell>`;
+}
+
+function excelSheet(name, columns, rows) {
+  const header = columns.map((column) => excelCell(column.label)).join('');
+  const body = rows.map((row) => (
+    `<Row>${columns.map((column) => excelCell(column.value(row))).join('')}</Row>`
+  )).join('');
+
+  return `
+    <Worksheet ss:Name="${escapeXml(name).slice(0, 31)}">
+      <Table>
+        <Row>${header}</Row>
+        ${body}
+      </Table>
+    </Worksheet>
+  `;
+}
+
+function buildWorkbook(sheets) {
+  return `<?xml version="1.0"?>
+<?mso-application progid="Excel.Sheet"?>
+<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet"
+  xmlns:o="urn:schemas-microsoft-com:office:office"
+  xmlns:x="urn:schemas-microsoft-com:office:excel"
+  xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet">
+  ${sheets.join('')}
+</Workbook>`;
 }
 
 router.get('/dashboard', protect, adminOnly, async (req, res) => {
@@ -182,6 +225,115 @@ router.get('/sales', protect, adminOnly, async (req, res) => {
     });
   } catch (error) {
     console.error('Error en reporte de ventas:', error);
+    res.status(500).json({ message: 'Error del servidor' });
+  }
+});
+
+router.get('/export-monthly', protect, adminOnly, async (req, res) => {
+  try {
+    const now = new Date();
+    const defaultStart = new Date(now.getFullYear(), now.getMonth(), 1);
+    const startDate = req.query.startDate || defaultStart.toISOString().slice(0, 10);
+    const endDate = req.query.endDate || now.toISOString().slice(0, 10);
+    const { start, end } = parseDateRange({ startDate, endDate });
+
+    const sales = requireRow(await supabase.from('sales').select('*')).map(mapSale).filter((sale) => inRange(sale.date, start, end));
+    const movements = requireRow(await supabase.from('movements').select('*')).map(mapMovement).filter((movement) => inRange(movement.date, start, end));
+    const shifts = requireRow(await supabase.from('shifts').select('*')).map(mapShift).filter((shift) => inRange(shift.startTime, start, end));
+    const inventory = requireRow(await supabase.from('inventory').select('*')).map(mapInventory);
+    const products = requireRow(await supabase.from('products').select('*')).map(mapProduct);
+    const users = requireRow(await supabase.from('app_users').select('*')).map(mapUser);
+
+    const saleItems = sales.flatMap((sale) => sale.items.map((item) => ({
+      invoiceNumber: sale.invoiceNumber,
+      date: sale.date,
+      sellerName: sale.sellerName,
+      paymentMethod: sale.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia',
+      productName: item.productName,
+      quantity: Number(item.quantity || 0),
+      unitPrice: Number(item.unitPrice || 0),
+      subtotal: Number(item.subtotal || 0),
+      saleTotal: sale.total,
+      cashReceived: sale.cashReceived,
+      changeAmount: sale.changeAmount
+    })));
+
+    const summary = [
+      { metric: 'Fecha inicial', value: startDate },
+      { metric: 'Fecha final', value: endDate },
+      { metric: 'Cantidad de ventas', value: sales.length },
+      { metric: 'Total vendido', value: sales.reduce((sum, sale) => sum + sale.total, 0) },
+      { metric: 'Ventas en efectivo', value: sales.filter((sale) => sale.paymentMethod === 'cash').reduce((sum, sale) => sum + sale.total, 0) },
+      { metric: 'Ventas por transferencia', value: sales.filter((sale) => sale.paymentMethod === 'transfer').reduce((sum, sale) => sum + sale.total, 0) },
+      { metric: 'Ingresos manuales', value: movements.filter((movement) => movement.type === 'income').reduce((sum, movement) => sum + movement.amount, 0) },
+      { metric: 'Egresos manuales', value: movements.filter((movement) => movement.type === 'expense').reduce((sum, movement) => sum + movement.amount, 0) }
+    ];
+
+    const workbook = buildWorkbook([
+      excelSheet('Resumen', [
+        { label: 'Metrica', value: (row) => row.metric },
+        { label: 'Valor', value: (row) => row.value }
+      ], summary),
+      excelSheet('Ventas', [
+        { label: 'Factura', value: (row) => row.invoiceNumber },
+        { label: 'Fecha', value: (row) => row.date },
+        { label: 'Vendedor', value: (row) => row.sellerName },
+        { label: 'Pago', value: (row) => row.paymentMethod },
+        { label: 'Producto', value: (row) => row.productName },
+        { label: 'Cantidad', value: (row) => row.quantity },
+        { label: 'Precio unitario', value: (row) => row.unitPrice },
+        { label: 'Subtotal', value: (row) => row.subtotal },
+        { label: 'Total factura', value: (row) => row.saleTotal },
+        { label: 'Recibido efectivo', value: (row) => row.cashReceived },
+        { label: 'Cambio devuelto', value: (row) => row.changeAmount }
+      ], saleItems),
+      excelSheet('Movimientos', [
+        { label: 'Fecha', value: (row) => row.date },
+        { label: 'Tipo', value: (row) => row.type === 'income' ? 'Ingreso' : 'Egreso' },
+        { label: 'Monto', value: (row) => row.amount },
+        { label: 'Metodo de pago', value: (row) => row.paymentMethod === 'cash' ? 'Efectivo' : 'Transferencia' },
+        { label: 'Recibido efectivo', value: (row) => row.cashReceived },
+        { label: 'Cambio devuelto', value: (row) => row.changeAmount },
+        { label: 'Categoria', value: (row) => row.category },
+        { label: 'Descripcion', value: (row) => row.description },
+        { label: 'Usuario', value: (row) => row.userName }
+      ], movements),
+      excelSheet('Inventario', [
+        { label: 'Insumo', value: (row) => row.name },
+        { label: 'Cantidad', value: (row) => row.quantity },
+        { label: 'Unidad', value: (row) => row.unit },
+        { label: 'Stock minimo', value: (row) => row.minStock },
+        { label: 'Ultima actualizacion', value: (row) => row.lastUpdate }
+      ], inventory),
+      excelSheet('Productos', [
+        { label: 'Producto', value: (row) => row.name },
+        { label: 'Precio', value: (row) => row.price },
+        { label: 'Categoria', value: (row) => row.category },
+        { label: 'Activo', value: (row) => row.isActive ? 'Si' : 'No' }
+      ], products),
+      excelSheet('Turnos', [
+        { label: 'Usuario', value: (row) => row.userName },
+        { label: 'Inicio', value: (row) => row.startTime },
+        { label: 'Fin', value: (row) => row.endTime || '' },
+        { label: 'Activo', value: (row) => row.isActive ? 'Si' : 'No' },
+        { label: 'Total ventas', value: (row) => row.totalSales },
+        { label: 'Cantidad ventas', value: (row) => row.salesCount }
+      ], shifts),
+      excelSheet('Usuarios', [
+        { label: 'Usuario', value: (row) => row.username },
+        { label: 'Nombre', value: (row) => row.fullName },
+        { label: 'Rol', value: (row) => row.role },
+        { label: 'Cuenta activa', value: (row) => row.isActive ? 'Si' : 'No' },
+        { label: 'Creado', value: (row) => row.createdAt }
+      ], users)
+    ]);
+
+    const filename = `mykonos-export-${startDate}-a-${endDate}.xls`;
+    res.setHeader('Content-Type', 'application/vnd.ms-excel; charset=utf-8');
+    res.setHeader('Content-Disposition', `attachment; filename="${filename}"`);
+    res.send(workbook);
+  } catch (error) {
+    console.error('Error exportando reporte mensual:', error);
     res.status(500).json({ message: 'Error del servidor' });
   }
 });

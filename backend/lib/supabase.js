@@ -13,6 +13,22 @@ const pool = new Pool({
     : undefined
 });
 
+export async function withTransaction(work) {
+  const client = await pool.connect();
+
+  try {
+    await client.query('begin');
+    const result = await work(client);
+    await client.query('commit');
+    return result;
+  } catch (error) {
+    await client.query('rollback');
+    throw error;
+  } finally {
+    client.release();
+  }
+}
+
 const TABLES = new Set([
   'app_users',
   'inventory',

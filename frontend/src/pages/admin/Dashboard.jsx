@@ -115,16 +115,16 @@ function AdminDashboard() {
   return (
     <div className="space-y-6">
       {/* Header */}
-      <div className="flex items-center justify-between">
+      <div className="flex flex-col gap-4 xl:flex-row xl:items-center xl:justify-between">
         <div>
-          <h1 className="text-3xl font-bold neon-text-gold mb-2">Dashboard</h1>
+          <h1 className="text-2xl sm:text-3xl font-bold neon-text-gold mb-2">Dashboard</h1>
           <p className="text-gray-400">Resumen general del negocio</p>
         </div>
 
         {/* Selector de período */}
-  <div className="flex items-center gap-4">
+  <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 xl:flex xl:items-center xl:gap-4">
   
-    <div className="flex flex-col">
+    <div className="flex min-w-0 flex-col">
       <label className="text-sm text-gray-400 mb-1">
         Fecha inicial
       </label>
@@ -136,12 +136,12 @@ function AdminDashboard() {
         startDate={startDate}
         endDate={endDate}
         dateFormat="yyyy-MM-dd"
-        className="input-neon"
+        className="input-neon w-full"
         placeholderText="Selecciona fecha"
       />
     </div>
 
-    <div className="flex flex-col">
+    <div className="flex min-w-0 flex-col">
       <label className="text-sm text-gray-400 mb-1">
         Fecha final
       </label>
@@ -154,7 +154,7 @@ function AdminDashboard() {
         endDate={endDate}
         minDate={startDate}
         dateFormat="yyyy-MM-dd"
-        className="input-neon"
+        className="input-neon w-full"
         placeholderText="Selecciona fecha"
       />
     </div>
@@ -162,20 +162,20 @@ function AdminDashboard() {
       </div>
 
       {/* Stats Cards */}
-      <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-6">
+      <div className="grid grid-cols-1 sm:grid-cols-2 xl:grid-cols-4 gap-4 sm:gap-6">
         {stats.map((stat, index) => {
           const Icon = stat.icon;
           return (
             <div key={index} className="card-neon hover:scale-105 transition-transform">
-              <div className="flex items-start justify-between mb-4">
+              <div className="flex items-start justify-between gap-3 mb-4">
                 <div>
                   <p className="text-gray-400 text-sm mb-1">{stat.label}</p>
-                  <p className={`text-3xl font-bold neon-text-${stat.color}`}>
+                  <p className={`text-2xl sm:text-3xl font-bold neon-text-${stat.color} break-words`}>
                     {stat.value}
                   </p>
                   <p className="text-gray-500 text-xs mt-1">{stat.subtext}</p>
                 </div>
-                <div className={`p-3 bg-neon-${stat.color} bg-opacity-20 rounded-lg`}>
+                <div className={`shrink-0 p-3 bg-neon-${stat.color} bg-opacity-20 rounded-lg`}>
                   <Icon className={`text-neon-${stat.color}`} size={24} />
                 </div>
               </div>
@@ -193,17 +193,17 @@ function AdminDashboard() {
           </div>
           <div className="space-y-3">
             {dashboard?.topProducts?.map((product, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
+              <div key={index} className="flex items-center justify-between gap-3 p-3 bg-dark-700 rounded-lg">
                 <div className="flex items-center gap-3">
                   <div className="w-8 h-8 bg-neon-pink bg-opacity-20 rounded-full flex items-center justify-center">
                     <span className="text-neon-pink font-bold">{index + 1}</span>
                   </div>
-                  <div>
+                  <div className="min-w-0">
                     <p className="font-medium">{product._id}</p>
                     <p className="text-sm text-gray-400">{product.quantity} vendidos</p>
                   </div>
                 </div>
-                <p className="text-neon-green font-bold">${product.revenue?.toLocaleString()}</p>
+                <p className="text-neon-green font-bold text-right">${product.revenue?.toLocaleString()}</p>
               </div>
             ))}
             {!dashboard?.topProducts?.length && (
@@ -220,12 +220,12 @@ function AdminDashboard() {
           </div>
           <div className="space-y-3">
             {dashboard?.sellerPerformance?.map((seller, index) => (
-              <div key={index} className="flex items-center justify-between p-3 bg-dark-700 rounded-lg">
-                <div>
+              <div key={index} className="flex items-center justify-between gap-3 p-3 bg-dark-700 rounded-lg">
+                <div className="min-w-0">
                   <p className="font-medium">{seller._id}</p>
                   <p className="text-sm text-gray-400">{seller.sales} ventas</p>
                 </div>
-                <p className="text-neon-green font-bold">${seller.revenue?.toLocaleString()}</p>
+                <p className="text-neon-green font-bold text-right">${seller.revenue?.toLocaleString()}</p>
               </div>
             ))}
             {!dashboard?.sellerPerformance?.length && (

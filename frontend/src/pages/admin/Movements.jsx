@@ -55,9 +55,9 @@ function AdminMovements() {
 
   return (
     <div className="space-y-6">
-      <div className="flex items-center justify-between">
-        <h1 className="text-3xl font-bold neon-text-gold">Movimientos de Caja</h1>
-        <button onClick={() => setShowModal(true)} className="btn-neon-cyan">+ Nuevo Movimiento</button>
+      <div className="flex flex-col gap-3 sm:flex-row sm:items-center sm:justify-between">
+        <h1 className="text-2xl sm:text-3xl font-bold neon-text-gold">Movimientos de Caja</h1>
+        <button onClick={() => setShowModal(true)} className="btn-neon-cyan w-full sm:w-auto">+ Nuevo Movimiento</button>
       </div>
 
       {balance && (
@@ -80,7 +80,7 @@ function AdminMovements() {
       <div className="card-neon">
         <div className="space-y-3">
           {movements.map((mov) => (
-            <div key={mov._id} className="flex items-center justify-between p-4 bg-dark-700 rounded-lg">
+            <div key={mov._id} className="flex flex-col gap-3 p-4 bg-dark-700 rounded-lg sm:flex-row sm:items-center sm:justify-between">
               <div>
                 <p className="font-medium">{mov.description}</p>
                 <p className="text-sm text-gray-400">

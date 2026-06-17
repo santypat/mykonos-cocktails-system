@@ -17,7 +17,7 @@ import useAuthStore from '../store/authStore';
 import toast from 'react-hot-toast';
 
 function AdminLayout({ children }) {
-  const [sidebarOpen, setSidebarOpen] = useState(true);
+  const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
@@ -47,10 +47,20 @@ function AdminLayout({ children }) {
   };
 
   return (
-    <div className="min-h-screen bg-dark-900">
-      {/* Sidebar */}
+    <div className="min-h-screen bg-dark-900 overflow-x-hidden">
+      {sidebarOpen && (
+        <button
+          type="button"
+          aria-label="Cerrar menu"
+          className="fixed inset-0 bg-black bg-opacity-60 z-30 lg:hidden"
+          onClick={() => setSidebarOpen(false)}
+        />
+      )}
+
       <aside className={`fixed top-0 left-0 h-full bg-dark-800 border-r border-dark-600 transition-all duration-300 z-40 ${
-        sidebarOpen ? 'w-64' : 'w-20'
+        sidebarOpen
+          ? 'translate-x-0 w-[82vw] max-w-80 lg:w-64'
+          : '-translate-x-full w-[82vw] max-w-80 lg:translate-x-0 lg:w-20'
       }`}>
         <div className="flex flex-col h-full">
           {/* Header */}
@@ -88,7 +98,13 @@ function AdminLayout({ children }) {
                       ? 'bg-neon-cyan bg-opacity-20 neon-border-cyan border'
                       : 'hover:bg-dark-700'
                   }`}
-                  onClick={(e) => item.disabled && e.preventDefault()}
+                  onClick={(e) => {
+                    if (item.disabled) {
+                      e.preventDefault();
+                      return;
+                    }
+                    if (window.innerWidth < 1024) setSidebarOpen(false);
+                  }}
                 >
                   <Icon 
                     size={20} 
@@ -124,9 +140,21 @@ function AdminLayout({ children }) {
         </div>
       </aside>
 
-      {/* Main Content */}
-      <main className={`transition-all duration-300 ${sidebarOpen ? 'ml-64' : 'ml-20'}`}>
-        <div className="p-6">
+      <main className={`transition-all duration-300 ${sidebarOpen ? 'lg:ml-64' : 'lg:ml-20'}`}>
+        <div className="sticky top-0 z-20 flex items-center justify-between border-b border-dark-600 bg-dark-900/95 px-4 py-3 backdrop-blur lg:hidden">
+          <div>
+            <p className="neon-text-gold font-bold">MYKONOS</p>
+            <p className="text-xs text-gray-400">Admin panel</p>
+          </div>
+          <button
+            onClick={() => setSidebarOpen(true)}
+            className="p-2 rounded-lg border border-dark-600 bg-dark-800"
+            aria-label="Abrir menu"
+          >
+            <Menu size={22} />
+          </button>
+        </div>
+        <div className="p-4 sm:p-6">
           {children}
         </div>
       </main>

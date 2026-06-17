@@ -6,6 +6,7 @@ import api from '../utils/api';
 import toast from 'react-hot-toast';
 
 function Login() {
+  const isWhatsAppBrowser = /WhatsApp/i.test(navigator.userAgent);
   const [username, setUsername] = useState('');
   const [password, setPassword] = useState('');
   const [loading, setLoading] = useState(false);
@@ -50,6 +51,8 @@ function Login() {
         message = 'La conexion tardo demasiado. Intenta de nuevo';
       } else if (!error.response && !navigator.onLine) {
         message = 'El celular no tiene conexion a internet';
+      } else if (!error.response && isWhatsAppBrowser) {
+        message = 'WhatsApp no pudo conectar. Abre el sitio en Safari o Chrome';
       }
 
       toast.error(message);
@@ -84,6 +87,12 @@ function Login() {
 
         {/* Formulario */}
         <div className="card-neon glass-morphism">
+          {isWhatsAppBrowser && (
+            <div className="mb-5 rounded-lg border border-neon-gold bg-neon-gold bg-opacity-10 p-3 text-sm text-yellow-100">
+              Si el login falla aqui, abre el enlace en Safari o Chrome. El navegador interno de WhatsApp puede bloquear la conexion con el servidor.
+            </div>
+          )}
+
           <form onSubmit={handleSubmit} className="space-y-6">
             <div>
               <label className="block text-sm font-medium text-gray-300 mb-2">

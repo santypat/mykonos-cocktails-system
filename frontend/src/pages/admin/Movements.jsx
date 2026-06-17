@@ -86,6 +86,11 @@ function AdminMovements() {
                 <p className="text-sm text-gray-400">
                   {format(new Date(mov.date), 'dd/MM/yyyy HH:mm', { locale: es })} - {mov.userName}
                 </p>
+                {mov.paymentMethod === 'cash' && mov.cashReceived > 0 && (
+                  <p className="text-xs text-gray-300 mt-1">
+                    Recibido: ${mov.cashReceived.toLocaleString()} - Devuelto: ${mov.changeAmount.toLocaleString()}
+                  </p>
+                )}
               </div>
               <div className="text-right">
                 <p className={`text-xl font-bold ${mov.type === 'income' ? 'text-neon-green' : 'text-neon-pink'}`}>

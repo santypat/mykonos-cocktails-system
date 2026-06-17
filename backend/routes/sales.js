@@ -6,7 +6,7 @@ const router = express.Router();
 
 router.post('/', protect, async (req, res) => {
   try {
-    const { items, paymentMethod } = req.body;
+    const { items, paymentMethod, cashReceived = 0 } = req.body;
 
     if (!items || items.length === 0) {
       return res.status(400).json({ message: 'Debe incluir al menos un producto' });
@@ -14,6 +14,12 @@ router.post('/', protect, async (req, res) => {
 
     if (!['cash', 'transfer'].includes(paymentMethod)) {
       return res.status(400).json({ message: 'Metodo de pago invalido' });
+    }
+
+    const receivedAmount = paymentMethod === 'cash' ? Number(cashReceived) : 0;
+
+    if (paymentMethod === 'cash' && (!Number.isFinite(receivedAmount) || receivedAmount < 0)) {
+      return res.status(400).json({ message: 'Efectivo recibido invalido' });
     }
 
     const activeShift = requireRow(await supabase
@@ -105,6 +111,11 @@ router.post('/', protect, async (req, res) => {
         .throwOnError();
     }
 
+    if (paymentMethod === 'cash' && receivedAmount < total) {
+      return res.status(400).json({ message: 'El efectivo recibido no alcanza para pagar la venta' });
+    }
+
+    const changeAmount = paymentMethod === 'cash' ? receivedAmount - total : 0;
     const invoiceNumber = `MYK-${Date.now()}-${Math.floor(Math.random() * 10000)}`;
     const sale = requireRow(await supabase
       .from('sales')
@@ -112,6 +123,8 @@ router.post('/', protect, async (req, res) => {
         items: saleItems,
         total,
         payment_method: paymentMethod,
+        cash_received: receivedAmount,
+        change_amount: changeAmount,
         seller_id: req.user._id,
         seller_name: req.user.fullName,
         invoice_number: invoiceNumber
@@ -126,6 +139,23 @@ router.post('/', protect, async (req, res) => {
         sales_count: Number(activeShift.sales_count) + 1
       })
       .eq('id', activeShift.id)
+      .throwOnError();
+
+    await supabase
+      .from('movements')
+      .insert({
+        type: 'income',
+        amount: total,
+        payment_method: paymentMethod,
+        cash_received: receivedAmount,
+        change_amount: changeAmount,
+        description: paymentMethod === 'cash'
+          ? `Venta ${invoiceNumber}. Recibido: ${receivedAmount}. Cambio: ${changeAmount}.`
+          : `Venta ${invoiceNumber}`,
+        category: 'Ventas',
+        user_id: req.user._id,
+        user_name: req.user.fullName
+      })
       .throwOnError();
 
     res.status(201).json(mapSale(sale));

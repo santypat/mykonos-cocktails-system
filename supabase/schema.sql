@@ -40,6 +40,8 @@ create table if not exists public.sales (
   items jsonb not null default '[]'::jsonb,
   total numeric not null check (total >= 0),
   payment_method text not null check (payment_method in ('cash', 'transfer')),
+  cash_received numeric not null default 0 check (cash_received >= 0),
+  change_amount numeric not null default 0 check (change_amount >= 0),
   seller_id uuid not null references public.app_users(id),
   seller_name text not null,
   invoice_number text not null unique,
@@ -48,11 +50,19 @@ create table if not exists public.sales (
   updated_at timestamptz not null default now()
 );
 
+alter table public.sales
+  add column if not exists cash_received numeric not null default 0 check (cash_received >= 0);
+
+alter table public.sales
+  add column if not exists change_amount numeric not null default 0 check (change_amount >= 0);
+
 create table if not exists public.movements (
   id uuid primary key default gen_random_uuid(),
   type text not null check (type in ('income', 'expense')),
   amount numeric not null check (amount >= 0),
   payment_method text not null check (payment_method in ('cash', 'transfer')),
+  cash_received numeric not null default 0 check (cash_received >= 0),
+  change_amount numeric not null default 0 check (change_amount >= 0),
   description text not null,
   category text not null default 'Otros',
   user_id uuid not null references public.app_users(id),
@@ -61,6 +71,12 @@ create table if not exists public.movements (
   created_at timestamptz not null default now(),
   updated_at timestamptz not null default now()
 );
+
+alter table public.movements
+  add column if not exists cash_received numeric not null default 0 check (cash_received >= 0);
+
+alter table public.movements
+  add column if not exists change_amount numeric not null default 0 check (change_amount >= 0);
 
 create table if not exists public.shifts (
   id uuid primary key default gen_random_uuid(),

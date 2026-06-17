@@ -180,8 +180,13 @@ router.put('/:id', protect, adminOnly, upload.single('image'), async (req, res) 
 
 router.delete('/:id', protect, adminOnly, async (req, res) => {
   try {
-    await supabase.from('products').delete().eq('id', req.params.id).throwOnError();
-    res.json({ message: 'Producto eliminado exitosamente' });
+    await supabase
+      .from('products')
+      .update({ is_active: false })
+      .eq('id', req.params.id)
+      .throwOnError();
+
+    res.json({ message: 'Producto desactivado exitosamente' });
   } catch (error) {
     console.error('Error eliminando producto:', error);
     res.status(500).json({ message: 'Error del servidor' });

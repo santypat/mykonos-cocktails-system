@@ -104,6 +104,19 @@ router.patch('/:id/adjust', protect, adminOnly, async (req, res) => {
 
 router.delete('/:id', protect, adminOnly, async (req, res) => {
   try {
+    const products = requireRow(await supabase
+      .from('products')
+      .select('*'));
+    const usedBy = products.filter((product) =>
+      (product.preparation || []).some((prep) => prep.ingredient === req.params.id)
+    );
+
+    if (usedBy.length) {
+      return res.status(400).json({
+        message: `No se puede eliminar: este insumo esta usado en ${usedBy.length} producto(s). Desactiva o edita esos productos primero.`
+      });
+    }
+
     await supabase.from('inventory').delete().eq('id', req.params.id).throwOnError();
     res.json({ message: 'Insumo eliminado exitosamente' });
   } catch (error) {

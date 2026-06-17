@@ -67,7 +67,7 @@ function AdminInventory() {
       toast.success('Insumo eliminado');
       fetchInventory();
     } catch (error) {
-      toast.error('Error al eliminar');
+      toast.error(error.response?.data?.message || 'Error al eliminar');
     }
   };
 

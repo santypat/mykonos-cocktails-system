@@ -92,10 +92,10 @@ function AdminProducts() {
     
     try {
       await api.delete(`/products/${id}`);
-      toast.success('Producto eliminado');
+      toast.success('Producto desactivado');
       fetchProducts();
     } catch (error) {
-      toast.error('Error al eliminar');
+      toast.error(error.response?.data?.message || 'Error al eliminar');
     }
   };
 

@@ -15,8 +15,12 @@ function Login() {
 
   const handleSubmit = async (e) => {
     e.preventDefault();
+    toast.dismiss();
+
+    const cleanUsername = username.trim();
+    const cleanPassword = password.trim();
     
-    if (!username || !password) {
+    if (!cleanUsername || !cleanPassword) {
       toast.error('Por favor complete todos los campos');
       return;
     }
@@ -24,7 +28,10 @@ function Login() {
     setLoading(true);
 
     try {
-      const { data } = await api.post('/auth/login', { username, password });
+      const { data } = await api.post('/auth/login', {
+        username: cleanUsername,
+        password: cleanPassword
+      });
       login(data.user, data.token);
       
       toast.success(`¡Bienvenido ${data.user.fullName}!`);
@@ -37,7 +44,15 @@ function Login() {
       }
     } catch (error) {
       console.error('Error en login:', error);
-      toast.error(error.response?.data?.message || 'Error al iniciar sesión');
+      let message = error.response?.data?.message || 'No se pudo conectar con el servidor';
+
+      if (error.code === 'ECONNABORTED') {
+        message = 'La conexion tardo demasiado. Intenta de nuevo';
+      } else if (!error.response && !navigator.onLine) {
+        message = 'El celular no tiene conexion a internet';
+      }
+
+      toast.error(message);
     } finally {
       setLoading(false);
     }
@@ -83,6 +98,9 @@ function Login() {
                   className="input-neon w-full pl-12"
                   placeholder="Ingrese su usuario"
                   disabled={loading}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
                 />
               </div>
             </div>
@@ -100,6 +118,9 @@ function Login() {
                   className="input-neon w-full pl-12"
                   placeholder="Ingrese su contraseña"
                   disabled={loading}
+                  autoCapitalize="none"
+                  autoCorrect="off"
+                  spellCheck="false"
                 />
               </div>
             </div>

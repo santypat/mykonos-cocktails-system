@@ -11,6 +11,7 @@ export const getAssetUrl = (path) => {
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: 20000,
   headers: {
     'Content-Type': 'application/json'
   }
@@ -41,7 +42,9 @@ api.interceptors.request.use(
 api.interceptors.response.use(
   (response) => response,
   (error) => {
-    if (error.response?.status === 401) {
+    const isLoginRequest = error.config?.url?.includes('/auth/login');
+
+    if (error.response?.status === 401 && !isLoginRequest) {
       sessionStorage.removeItem('mykonos-auth');
       localStorage.removeItem('mykonos-auth');
       window.location.href = '/login';

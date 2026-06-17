@@ -1,5 +1,5 @@
 import { create } from 'zustand';
-import { persist } from 'zustand/middleware';
+import { createJSONStorage, persist } from 'zustand/middleware';
 
 const useAuthStore = create(
   persist(
@@ -9,6 +9,7 @@ const useAuthStore = create(
       isAuthenticated: false,
       
       login: (userData, token) => {
+        localStorage.removeItem('mykonos-auth');
         set({
           user: userData,
           token,
@@ -17,6 +18,7 @@ const useAuthStore = create(
       },
       
       logout: () => {
+        localStorage.removeItem('mykonos-auth');
         set({
           user: null,
           token: null,
@@ -30,6 +32,7 @@ const useAuthStore = create(
     }),
     {
       name: 'mykonos-auth',
+      storage: createJSONStorage(() => sessionStorage),
       partialize: (state) => ({
         user: state.user,
         token: state.token,

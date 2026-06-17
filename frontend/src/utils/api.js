@@ -19,7 +19,7 @@ const api = axios.create({
 // Interceptor para agregar token a todas las peticiones
 api.interceptors.request.use(
   (config) => {
-    const authData = localStorage.getItem('mykonos-auth');
+    const authData = sessionStorage.getItem('mykonos-auth');
     if (authData) {
       try {
         const { state } = JSON.parse(authData);
@@ -27,7 +27,7 @@ api.interceptors.request.use(
           config.headers.Authorization = `Bearer ${state.token}`;
         }
       } catch {
-        localStorage.removeItem('mykonos-auth');
+        sessionStorage.removeItem('mykonos-auth');
       }
     }
     return config;
@@ -42,6 +42,7 @@ api.interceptors.response.use(
   (response) => response,
   (error) => {
     if (error.response?.status === 401) {
+      sessionStorage.removeItem('mykonos-auth');
       localStorage.removeItem('mykonos-auth');
       window.location.href = '/login';
     }

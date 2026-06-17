@@ -66,6 +66,22 @@ function SellerPanel() {
   }, []);
 
   useEffect(() => {
+    const refreshSellerState = () => {
+      fetchActiveShift();
+      fetchProducts();
+      fetchSellerReport();
+    };
+
+    const intervalId = window.setInterval(refreshSellerState, 10000);
+    window.addEventListener('focus', refreshSellerState);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', refreshSellerState);
+    };
+  }, [reportFilters.startDate, reportFilters.endDate]);
+
+  useEffect(() => {
     fetchSellerReport();
   }, [reportFilters.startDate, reportFilters.endDate]);
 
@@ -125,7 +141,8 @@ function SellerPanel() {
       setShift(null);
       toast.success('Turno finalizado');
     } catch (error) {
-      toast.error('Error al finalizar turno');
+      fetchActiveShift();
+      toast.error(error.response?.data?.message || 'Error al finalizar turno');
     }
   };
 

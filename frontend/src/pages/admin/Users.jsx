@@ -9,6 +9,13 @@ function AdminUsers() {
 
   useEffect(() => {
     fetchUsers();
+    const intervalId = window.setInterval(fetchUsers, 10000);
+    window.addEventListener('focus', fetchUsers);
+
+    return () => {
+      window.clearInterval(intervalId);
+      window.removeEventListener('focus', fetchUsers);
+    };
   }, []);
 
   const fetchUsers = async () => {

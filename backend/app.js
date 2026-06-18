@@ -11,6 +11,7 @@ import movementRoutes from './routes/movements.js';
 import userRoutes from './routes/users.js';
 import reportRoutes from './routes/reports.js';
 import shiftRoutes from './routes/shifts.js';
+import maintenanceRoutes from './routes/maintenance.js';
 
 dotenv.config();
 
@@ -40,6 +41,7 @@ app.use('/api/movements', movementRoutes);
 app.use('/api/users', userRoutes);
 app.use('/api/reports', reportRoutes);
 app.use('/api/shifts', shiftRoutes);
+app.use('/api/maintenance', maintenanceRoutes);
 
 app.get('/api/health', (req, res) => {
   res.json({ status: 'OK', message: 'Mykonos API funcionando correctamente' });

@@ -1,6 +1,7 @@
 import express from 'express';
 import { protect, adminOnly } from '../middleware/auth.js';
 import { supabase, mapShift, requireRow } from '../lib/supabase.js';
+import { applyDateRangeFilters } from '../lib/dateRange.js';
 
 const router = express.Router();
 
@@ -99,13 +100,12 @@ router.get('/history', protect, async (req, res) => {
       return res.status(403).json({ message: 'Acceso denegado. Solo administradores.' });
     }
 
-    let query = supabase.from('shifts').select('*');
-    if (startDate) query = query.gte('start_time', new Date(startDate).toISOString());
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      query = query.lte('start_time', end.toISOString());
-    }
+    let query = applyDateRangeFilters(
+      supabase.from('shifts').select('*'),
+      'start_time',
+      startDate,
+      endDate
+    );
     if (userId) query = query.eq('user_id', userId);
     else if (req.user.role !== 'admin') query = query.eq('user_id', req.user._id);
 

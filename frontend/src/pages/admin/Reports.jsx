@@ -3,6 +3,7 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { toDateTimeParam } from '../../utils/dateTimeRange';
 function AdminReports() {
 
   const [startDate, setStartDate] = useState(null);
@@ -30,14 +31,14 @@ function AdminReports() {
     if (startDate) {
       params.append(
         'startDate',
-        startDate.toISOString().split('T')[0]
+        toDateTimeParam(startDate)
       );
     }
 
     if (endDate) {
       params.append(
         'endDate',
-        endDate.toISOString().split('T')[0]
+        toDateTimeParam(endDate)
       );
     }
 
@@ -60,7 +61,7 @@ function AdminReports() {
   }
 };
 
-  const getDateParam = (date) => date?.toISOString().split('T')[0];
+  const getDateParam = (date) => toDateTimeParam(date);
 
   const handleMonthlyExport = async () => {
     try {
@@ -111,11 +112,14 @@ function AdminReports() {
         selected={startDate}
         onChange={(date) => setStartDate(date)}
         selectsStart
+        showTimeSelect
+        timeIntervals={15}
+        timeCaption="Hora"
         startDate={startDate}
         endDate={endDate}
-        dateFormat="yyyy-MM-dd"
+        dateFormat="yyyy-MM-dd HH:mm"
         className="input-neon w-full"
-        placeholderText="Fecha inicial"
+        placeholderText="Fecha y hora inicial"
       />
     </div>
 
@@ -128,12 +132,15 @@ function AdminReports() {
         selected={endDate}
         onChange={(date) => setEndDate(date)}
         selectsEnd
+        showTimeSelect
+        timeIntervals={15}
+        timeCaption="Hora"
         startDate={startDate}
         endDate={endDate}
         minDate={startDate}
-        dateFormat="yyyy-MM-dd"
+        dateFormat="yyyy-MM-dd HH:mm"
         className="input-neon w-full"
-        placeholderText="Fecha final"
+        placeholderText="Fecha y hora final"
       />
     </div>
 
@@ -155,12 +162,12 @@ function AdminReports() {
           <p className="text-sm text-gray-500">{dashboard.sales?.salesCount || 0} transacciones</p>
         </div>
         <div className="card-neon">
-          <p className="text-gray-400 mb-2">Efectivo</p>
-          <p className="text-2xl sm:text-3xl font-bold neon-text-green break-words">${dashboard.sales?.cashSales?.toLocaleString() || 0}</p>
+          <p className="text-gray-400 mb-2">Efectivo en Caja</p>
+          <p className="text-2xl sm:text-3xl font-bold neon-text-green break-words">${dashboard.balance?.cash?.toLocaleString() || 0}</p>
         </div>
         <div className="card-neon">
-          <p className="text-gray-400 mb-2">Transferencias</p>
-          <p className="text-2xl sm:text-3xl font-bold neon-text-purple break-words">${dashboard.sales?.transferSales?.toLocaleString() || 0}</p>
+          <p className="text-gray-400 mb-2">Transferencias Netas</p>
+          <p className="text-2xl sm:text-3xl font-bold neon-text-purple break-words">${dashboard.balance?.transfer?.toLocaleString() || 0}</p>
         </div>
         <div className="card-neon">
           <p className="text-gray-400 mb-2">Ingreso Neto</p>

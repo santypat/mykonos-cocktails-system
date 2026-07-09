@@ -24,6 +24,7 @@ import api, { getAssetUrl } from '../utils/api';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
+import { getTodayDateTimeRange, toDateTimeInputParam } from '../utils/dateTimeRange';
 
 const createInvoice = (index = 1) => ({
   id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -42,10 +43,7 @@ function SellerPanel() {
   const [lastSale, setLastSale] = useState(null);
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState(null);
-  const [reportFilters, setReportFilters] = useState(() => {
-    const today = new Date().toISOString().slice(0, 10);
-    return { startDate: today, endDate: today };
-  });
+  const [reportFilters, setReportFilters] = useState(getTodayDateTimeRange);
 
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -114,8 +112,10 @@ function SellerPanel() {
   const fetchSellerReport = async () => {
     try {
       const params = new URLSearchParams();
-      if (reportFilters.startDate) params.set('startDate', reportFilters.startDate);
-      if (reportFilters.endDate) params.set('endDate', reportFilters.endDate);
+      const startDate = toDateTimeInputParam(reportFilters.startDate);
+      const endDate = toDateTimeInputParam(reportFilters.endDate);
+      if (startDate) params.set('startDate', startDate);
+      if (endDate) params.set('endDate', endDate);
       const { data } = await api.get(`/reports/seller-summary?${params.toString()}`);
       setReport(data);
     } catch (error) {
@@ -354,13 +354,13 @@ function SellerPanel() {
             <div className="flex items-center gap-2 flex-wrap">
               <CalendarDays className="text-neon-cyan" size={18} />
               <input
-                type="date"
+                type="datetime-local"
                 value={reportFilters.startDate}
                 onChange={(e) => setReportFilters((current) => ({ ...current, startDate: e.target.value }))}
                 className="input-neon"
               />
               <input
-                type="date"
+                type="datetime-local"
                 value={reportFilters.endDate}
                 onChange={(e) => setReportFilters((current) => ({ ...current, endDate: e.target.value }))}
                 className="input-neon"

@@ -1,22 +1,9 @@
 import express from 'express';
 import { protect, adminOnly } from '../middleware/auth.js';
 import { supabase, mapInventory, mapMovement, mapProduct, mapSale, mapShift, mapUser, requireRow } from '../lib/supabase.js';
+import { inRange, parseDateRange } from '../lib/dateRange.js';
 
 const router = express.Router();
-
-function parseDateRange({ startDate, endDate }) {
-  const start = startDate ? new Date(startDate) : null;
-  const end = endDate ? new Date(endDate) : null;
-  if (end) end.setHours(23, 59, 59, 999);
-  return { start, end };
-}
-
-function inRange(dateValue, start, end) {
-  const date = new Date(dateValue);
-  if (start && date < start) return false;
-  if (end && date > end) return false;
-  return true;
-}
 
 function getPeriodStart(period) {
   const now = new Date();
@@ -84,6 +71,53 @@ function excelSheet(name, columns, rows) {
   `;
 }
 
+function sumAmounts(items, predicate = () => true) {
+  return items.filter(predicate).reduce((sum, item) => sum + item.amount, 0);
+}
+
+function sumSales(items, predicate = () => true) {
+  return items.filter(predicate).reduce((sum, item) => sum + item.total, 0);
+}
+
+function isSaleMovement(movement) {
+  return movement.type === 'income' && movement.category === 'Ventas';
+}
+
+function buildMoneySummary(sales, movements) {
+  const manualMovements = movements.filter((movement) => !isSaleMovement(movement));
+
+  const salesSummary = {
+    totalSales: sumSales(sales),
+    salesCount: sales.length,
+    cashSales: sumSales(sales, (sale) => sale.paymentMethod === 'cash'),
+    transferSales: sumSales(sales, (sale) => sale.paymentMethod === 'transfer')
+  };
+
+  const movementSummary = {
+    income: sumAmounts(movements, (movement) => movement.type === 'income'),
+    expense: sumAmounts(movements, (movement) => movement.type === 'expense'),
+    manualIncome: sumAmounts(manualMovements, (movement) => movement.type === 'income'),
+    manualExpense: sumAmounts(manualMovements, (movement) => movement.type === 'expense'),
+    saleIncome: sumAmounts(movements, isSaleMovement)
+  };
+
+  const balance = {
+    cash: sumAmounts(movements, (movement) => movement.paymentMethod === 'cash' && movement.type === 'income')
+      - sumAmounts(movements, (movement) => movement.paymentMethod === 'cash' && movement.type === 'expense'),
+    transfer: sumAmounts(movements, (movement) => movement.paymentMethod === 'transfer' && movement.type === 'income')
+      - sumAmounts(movements, (movement) => movement.paymentMethod === 'transfer' && movement.type === 'expense')
+  };
+
+  balance.total = balance.cash + balance.transfer;
+
+  return {
+    salesSummary,
+    movementSummary,
+    balance,
+    manualMovements
+  };
+}
+
 function buildWorkbook(sheets) {
   return `<?xml version="1.0"?>
 <?mso-application progid="Excel.Sheet"?>
@@ -102,17 +136,7 @@ router.get('/dashboard', protect, adminOnly, async (req, res) => {
     const movements = requireRow(await supabase.from('movements').select('*')).map(mapMovement).filter((movement) => inRange(movement.date, start, end));
     const inventory = requireRow(await supabase.from('inventory').select('*')).map(mapInventory);
 
-    const salesSummary = {
-      totalSales: sales.reduce((sum, sale) => sum + sale.total, 0),
-      salesCount: sales.length,
-      cashSales: sales.filter((sale) => sale.paymentMethod === 'cash').reduce((sum, sale) => sum + sale.total, 0),
-      transferSales: sales.filter((sale) => sale.paymentMethod === 'transfer').reduce((sum, sale) => sum + sale.total, 0)
-    };
-
-    const movementSummary = {
-      income: movements.filter((movement) => movement.type === 'income').reduce((sum, movement) => sum + movement.amount, 0),
-      expense: movements.filter((movement) => movement.type === 'expense').reduce((sum, movement) => sum + movement.amount, 0)
-    };
+    const { salesSummary, movementSummary, balance } = buildMoneySummary(sales, movements);
 
     const productMap = new Map();
     sales.forEach((sale) => {
@@ -137,10 +161,11 @@ router.get('/dashboard', protect, adminOnly, async (req, res) => {
       endDate: req.query.endDate,
       sales: salesSummary,
       movements: movementSummary,
+      balance,
       topProducts: [...productMap.values()].sort((a, b) => b.quantity - a.quantity).slice(0, 5),
       sellerPerformance: [...sellerMap.values()].sort((a, b) => b.revenue - a.revenue),
       lowStock: inventory.filter((item) => item.quantity <= item.minStock).slice(0, 5),
-      netIncome: salesSummary.totalSales + movementSummary.income - movementSummary.expense
+      netIncome: balance.total
     });
   } catch (error) {
     console.error('Error en dashboard:', error);
@@ -258,15 +283,20 @@ router.get('/export-monthly', protect, adminOnly, async (req, res) => {
       changeAmount: sale.changeAmount
     })));
 
+    const { movementSummary, balance } = buildMoneySummary(sales, movements);
+
     const summary = [
       { metric: 'Fecha inicial', value: startDate },
       { metric: 'Fecha final', value: endDate },
       { metric: 'Cantidad de ventas', value: sales.length },
-      { metric: 'Total vendido', value: sales.reduce((sum, sale) => sum + sale.total, 0) },
-      { metric: 'Ventas en efectivo', value: sales.filter((sale) => sale.paymentMethod === 'cash').reduce((sum, sale) => sum + sale.total, 0) },
-      { metric: 'Ventas por transferencia', value: sales.filter((sale) => sale.paymentMethod === 'transfer').reduce((sum, sale) => sum + sale.total, 0) },
-      { metric: 'Ingresos manuales', value: movements.filter((movement) => movement.type === 'income').reduce((sum, movement) => sum + movement.amount, 0) },
-      { metric: 'Egresos manuales', value: movements.filter((movement) => movement.type === 'expense').reduce((sum, movement) => sum + movement.amount, 0) }
+      { metric: 'Total vendido', value: sumSales(sales) },
+      { metric: 'Ventas en efectivo', value: sumSales(sales, (sale) => sale.paymentMethod === 'cash') },
+      { metric: 'Ventas por transferencia', value: sumSales(sales, (sale) => sale.paymentMethod === 'transfer') },
+      { metric: 'Ingresos manuales', value: movementSummary.manualIncome },
+      { metric: 'Egresos manuales', value: movementSummary.manualExpense },
+      { metric: 'Efectivo en caja', value: balance.cash },
+      { metric: 'Transferencias netas', value: balance.transfer },
+      { metric: 'Balance total', value: balance.total }
     ];
 
     const workbook = buildWorkbook([
@@ -344,27 +374,27 @@ router.get('/financial', protect, adminOnly, async (req, res) => {
     const sales = requireRow(await supabase.from('sales').select('*')).map(mapSale).filter((sale) => inRange(sale.date, start, end));
     const movements = requireRow(await supabase.from('movements').select('*')).map(mapMovement).filter((movement) => inRange(movement.date, start, end));
 
+    const { salesSummary, movementSummary, balance } = buildMoneySummary(sales, movements);
+
     const financial = {
       sales: {
-        total: sales.reduce((sum, sale) => sum + sale.total, 0),
-        cash: sales.filter((sale) => sale.paymentMethod === 'cash').reduce((sum, sale) => sum + sale.total, 0),
-        transfer: sales.filter((sale) => sale.paymentMethod === 'transfer').reduce((sum, sale) => sum + sale.total, 0)
+        total: salesSummary.totalSales,
+        cash: salesSummary.cashSales,
+        transfer: salesSummary.transferSales
       },
       movements: {
-        income: { cash: 0, transfer: 0, total: 0 },
-        expense: { cash: 0, transfer: 0, total: 0 }
+        income: { cash: 0, transfer: 0, total: movementSummary.income },
+        expense: { cash: 0, transfer: 0, total: movementSummary.expense },
+        manualIncome: movementSummary.manualIncome,
+        manualExpense: movementSummary.manualExpense,
+        saleIncome: movementSummary.saleIncome
       },
-      balance: { cash: 0, transfer: 0, total: 0 }
+      balance
     };
 
     movements.forEach((movement) => {
       financial.movements[movement.type][movement.paymentMethod] += movement.amount;
-      financial.movements[movement.type].total += movement.amount;
     });
-
-    financial.balance.cash = financial.sales.cash + financial.movements.income.cash - financial.movements.expense.cash;
-    financial.balance.transfer = financial.sales.transfer + financial.movements.income.transfer - financial.movements.expense.transfer;
-    financial.balance.total = financial.balance.cash + financial.balance.transfer;
 
     res.json(financial);
   } catch (error) {

@@ -1,26 +1,16 @@
 import express from 'express';
 import { protect, adminOnly } from '../middleware/auth.js';
 import { supabase, mapMovement, requireRow } from '../lib/supabase.js';
+import { applyDateRangeFilters } from '../lib/dateRange.js';
 
 const router = express.Router();
-
-function applyDateFilters(query, startDate, endDate) {
-  let next = query;
-  if (startDate) next = next.gte('date', new Date(startDate).toISOString());
-  if (endDate) {
-    const end = new Date(endDate);
-    end.setHours(23, 59, 59, 999);
-    next = next.lte('date', end.toISOString());
-  }
-  return next;
-}
 
 router.get('/', protect, adminOnly, async (req, res) => {
   try {
     const { startDate, endDate, type, paymentMethod } = req.query;
     let query = supabase.from('movements').select('*');
 
-    query = applyDateFilters(query, startDate, endDate);
+    query = applyDateRangeFilters(query, 'date', startDate, endDate);
     if (type) query = query.eq('type', type);
     if (paymentMethod) query = query.eq('payment_method', paymentMethod);
 
@@ -64,8 +54,9 @@ router.post('/', protect, adminOnly, async (req, res) => {
 router.get('/balance', protect, adminOnly, async (req, res) => {
   try {
     const { startDate, endDate } = req.query;
-    const movements = requireRow(await applyDateFilters(
+    const movements = requireRow(await applyDateRangeFilters(
       supabase.from('movements').select('*'),
+      'date',
       startDate,
       endDate
     ));
@@ -101,6 +92,18 @@ router.get('/balance', protect, adminOnly, async (req, res) => {
 
 router.delete('/:id', protect, adminOnly, async (req, res) => {
   try {
+    const movement = requireRow(await supabase
+      .from('movements')
+      .select('*')
+      .eq('id', req.params.id)
+      .single());
+
+    if (movement.category === 'Ventas') {
+      return res.status(400).json({
+        message: 'No se puede eliminar un movimiento generado por una venta'
+      });
+    }
+
     await supabase.from('movements').delete().eq('id', req.params.id).throwOnError();
     res.json({ message: 'Movimiento eliminado exitosamente' });
   } catch (error) {

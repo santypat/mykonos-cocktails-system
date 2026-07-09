@@ -12,6 +12,7 @@ import api from '../../utils/api';
 import toast from 'react-hot-toast';
 import DatePicker from 'react-datepicker';
 import 'react-datepicker/dist/react-datepicker.css';
+import { toDateTimeParam } from '../../utils/dateTimeRange';
 
 function AdminDashboard() {
   const [startDate, setStartDate] = useState(null);
@@ -40,14 +41,14 @@ function AdminDashboard() {
     if (startDate) {
       params.append(
         'startDate',
-        startDate.toISOString().split('T')[0]
+        toDateTimeParam(startDate)
       );
     }
 
     if (endDate) {
       params.append(
         'endDate',
-        endDate.toISOString().split('T')[0]
+        toDateTimeParam(endDate)
       );
     }
 
@@ -90,25 +91,25 @@ function AdminDashboard() {
       subtext: `${dashboard?.sales?.salesCount || 0} ventas`
     },
     {
-      label: 'Efectivo',
-      value: `$${dashboard?.sales?.cashSales?.toLocaleString() || 0}`,
+      label: 'Efectivo en Caja',
+      value: `$${dashboard?.balance?.cash?.toLocaleString() || 0}`,
       icon: DollarSign,
       color: 'green',
-      subtext: 'En caja'
+      subtext: 'Balance real'
     },
     {
-      label: 'Transferencias',
-      value: `$${dashboard?.sales?.transferSales?.toLocaleString() || 0}`,
+      label: 'Transferencias Netas',
+      value: `$${dashboard?.balance?.transfer?.toLocaleString() || 0}`,
       icon: DollarSign,
       color: 'purple',
-      subtext: 'Digital'
+      subtext: 'Balance real'
     },
     {
       label: 'Ingreso Neto',
       value: `$${dashboard?.netIncome?.toLocaleString() || 0}`,
       icon: TrendingUp,
       color: 'pink',
-      subtext: 'Ganancias'
+      subtext: 'Caja + transferencias'
     }
   ];
 
@@ -133,11 +134,14 @@ function AdminDashboard() {
         selected={startDate}
         onChange={(date) => setStartDate(date)}
         selectsStart
+        showTimeSelect
+        timeIntervals={15}
+        timeCaption="Hora"
         startDate={startDate}
         endDate={endDate}
-        dateFormat="yyyy-MM-dd"
+        dateFormat="yyyy-MM-dd HH:mm"
         className="input-neon w-full"
-        placeholderText="Selecciona fecha"
+        placeholderText="Fecha y hora inicial"
       />
     </div>
 
@@ -150,12 +154,15 @@ function AdminDashboard() {
         selected={endDate}
         onChange={(date) => setEndDate(date)}
         selectsEnd
+        showTimeSelect
+        timeIntervals={15}
+        timeCaption="Hora"
         startDate={startDate}
         endDate={endDate}
         minDate={startDate}
-        dateFormat="yyyy-MM-dd"
+        dateFormat="yyyy-MM-dd HH:mm"
         className="input-neon w-full"
-        placeholderText="Selecciona fecha"
+        placeholderText="Fecha y hora final"
       />
     </div>
 </div>

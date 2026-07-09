@@ -1,6 +1,7 @@
 import express from 'express';
 import { protect } from '../middleware/auth.js';
 import { supabase, mapInventory, mapProduct, mapSale, requireRow, withTransaction } from '../lib/supabase.js';
+import { applyDateRangeFilters } from '../lib/dateRange.js';
 
 const router = express.Router();
 
@@ -191,12 +192,7 @@ router.get('/', protect, async (req, res) => {
     const { startDate, endDate, seller } = req.query;
     let query = supabase.from('sales').select('*');
 
-    if (startDate) query = query.gte('date', new Date(startDate).toISOString());
-    if (endDate) {
-      const end = new Date(endDate);
-      end.setHours(23, 59, 59, 999);
-      query = query.lte('date', end.toISOString());
-    }
+    query = applyDateRangeFilters(query, 'date', startDate, endDate);
 
     if (req.user.role !== 'admin') query = query.eq('seller_id', req.user._id);
     else if (seller) query = query.eq('seller_id', seller);

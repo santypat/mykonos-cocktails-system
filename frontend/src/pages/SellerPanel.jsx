@@ -24,7 +24,9 @@ import api, { getAssetUrl } from '../utils/api';
 import toast from 'react-hot-toast';
 import { format } from 'date-fns';
 import { es } from 'date-fns/locale';
-import { getTodayDateTimeRange, toDateTimeInputParam } from '../utils/dateTimeRange';
+import DatePicker from 'react-datepicker';
+import 'react-datepicker/dist/react-datepicker.css';
+import { toDateTimeParam } from '../utils/dateTimeRange';
 
 const createInvoice = (index = 1) => ({
   id: `${Date.now()}-${Math.random().toString(16).slice(2)}`,
@@ -33,6 +35,24 @@ const createInvoice = (index = 1) => ({
   paymentMethod: 'cash',
   cashReceived: ''
 });
+
+const createTodayReportRange = () => {
+  const startDate = new Date();
+  startDate.setHours(0, 0, 0, 0);
+
+  const endDate = new Date();
+  endDate.setHours(23, 59, 0, 0);
+
+  return { startDate, endDate };
+};
+
+const getSafeReportRange = ({ startDate, endDate }) => {
+  if (!startDate || !endDate || endDate >= startDate) {
+    return { startDate, endDate };
+  }
+
+  return { startDate, endDate: startDate };
+};
 
 function SellerPanel() {
   const [products, setProducts] = useState([]);
@@ -43,7 +63,7 @@ function SellerPanel() {
   const [lastSale, setLastSale] = useState(null);
   const [loading, setLoading] = useState(true);
   const [report, setReport] = useState(null);
-  const [reportFilters, setReportFilters] = useState(getTodayDateTimeRange);
+  const [reportFilters, setReportFilters] = useState(createTodayReportRange);
 
   const { user, logout } = useAuthStore();
   const navigate = useNavigate();
@@ -112,8 +132,9 @@ function SellerPanel() {
   const fetchSellerReport = async () => {
     try {
       const params = new URLSearchParams();
-      const startDate = toDateTimeInputParam(reportFilters.startDate);
-      const endDate = toDateTimeInputParam(reportFilters.endDate);
+      const safeRange = getSafeReportRange(reportFilters);
+      const startDate = toDateTimeParam(safeRange.startDate);
+      const endDate = toDateTimeParam(safeRange.endDate);
       if (startDate) params.set('startDate', startDate);
       if (endDate) params.set('endDate', endDate);
       const { data } = await api.get(`/reports/seller-summary?${params.toString()}`);
@@ -351,20 +372,49 @@ function SellerPanel() {
               <BarChart3 size={22} />
               Reporte de ventas
             </h2>
-            <div className="flex items-center gap-2 flex-wrap">
+            <div className="flex w-full items-end gap-3 xl:w-auto">
               <CalendarDays className="text-neon-cyan" size={18} />
-              <input
-                type="datetime-local"
-                value={reportFilters.startDate}
-                onChange={(e) => setReportFilters((current) => ({ ...current, startDate: e.target.value }))}
-                className="input-neon"
-              />
-              <input
-                type="datetime-local"
-                value={reportFilters.endDate}
-                onChange={(e) => setReportFilters((current) => ({ ...current, endDate: e.target.value }))}
-                className="input-neon"
-              />
+              <div className="grid flex-1 grid-cols-1 gap-3 sm:grid-cols-2">
+                <div className="flex min-w-0 flex-col">
+                  <label className="text-xs text-gray-400 mb-1">Desde</label>
+                  <DatePicker
+                    selected={reportFilters.startDate}
+                    onChange={(date) => setReportFilters((current) => getSafeReportRange({
+                      ...current,
+                      startDate: date
+                    }))}
+                    selectsStart
+                    showTimeSelect
+                    timeIntervals={15}
+                    timeCaption="Hora"
+                    startDate={reportFilters.startDate}
+                    endDate={reportFilters.endDate}
+                    dateFormat="yyyy-MM-dd HH:mm"
+                    className="input-neon w-full"
+                    placeholderText="Fecha y hora inicial"
+                  />
+                </div>
+                <div className="flex min-w-0 flex-col">
+                  <label className="text-xs text-gray-400 mb-1">Hasta</label>
+                  <DatePicker
+                    selected={reportFilters.endDate}
+                    onChange={(date) => setReportFilters((current) => getSafeReportRange({
+                      ...current,
+                      endDate: date
+                    }))}
+                    selectsEnd
+                    showTimeSelect
+                    timeIntervals={15}
+                    timeCaption="Hora"
+                    startDate={reportFilters.startDate}
+                    endDate={reportFilters.endDate}
+                    minDate={reportFilters.startDate}
+                    dateFormat="yyyy-MM-dd HH:mm"
+                    className="input-neon w-full"
+                    placeholderText="Fecha y hora final"
+                  />
+                </div>
+              </div>
             </div>
           </div>
 

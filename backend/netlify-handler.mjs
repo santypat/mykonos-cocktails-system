@@ -8,8 +8,9 @@ const serverlessHandler = serverless(app, {
 
 export const handler = (event, context) => {
   const path = event.path || '';
+  const shouldPreservePath = path.startsWith(`${functionPrefix}/api/`) || path.startsWith(`${functionPrefix}/uploads/`);
 
-  if (path.startsWith(`${functionPrefix}/`) && !path.startsWith(`${functionPrefix}/api/`)) {
+  if (path.startsWith(`${functionPrefix}/`) && !shouldPreservePath) {
     event.path = `${functionPrefix}/api${path.slice(functionPrefix.length)}`;
   }
 

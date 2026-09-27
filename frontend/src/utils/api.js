@@ -1,7 +1,9 @@
 import axios from 'axios';
 
-export const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/api' : 'http://localhost:5000/api');
-export const ASSET_BASE_URL = API_BASE_URL.replace(/\/api\/?$/, '');
+export const API_BASE_URL = import.meta.env.VITE_API_URL || (import.meta.env.PROD ? '/.netlify/functions/api' : 'http://localhost:5000/api');
+export const ASSET_BASE_URL = API_BASE_URL.includes('/.netlify/functions/api')
+  ? API_BASE_URL
+  : API_BASE_URL.replace(/\/api\/?$/, '');
 
 export const getAssetUrl = (path) => {
   if (!path) return '';

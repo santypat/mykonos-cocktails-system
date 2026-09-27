@@ -47,6 +47,11 @@ router.post('/login', async (req, res) => {
     });
   } catch (error) {
     console.error('Error en login:', error);
+    if (/exceeded the quota|quota/i.test(error.message || '')) {
+      return res.status(503).json({
+        message: 'La base de datos gratuita alcanzo su limite de uso. Intenta cuando Neon reinicie la cuota o revisa el plan gratuito.'
+      });
+    }
     res.status(500).json({ message: 'Error del servidor' });
   }
 });

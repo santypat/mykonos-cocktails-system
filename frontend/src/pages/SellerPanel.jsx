@@ -90,11 +90,9 @@ function SellerPanel() {
       fetchSellerReport();
     };
 
-    const intervalId = window.setInterval(refreshSellerState, 30000);
     window.addEventListener('focus', refreshSellerState);
 
     return () => {
-      window.clearInterval(intervalId);
       window.removeEventListener('focus', refreshSellerState);
     };
   }, [reportFilters.startDate, reportFilters.endDate]);

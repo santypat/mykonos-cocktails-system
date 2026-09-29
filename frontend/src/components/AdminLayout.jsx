@@ -11,13 +11,16 @@ import {
   LogOut,
   Menu,
   X,
-  Settings
+  Settings,
+  Download
 } from 'lucide-react';
 import useAuthStore from '../store/authStore';
 import toast from 'react-hot-toast';
+import api from '../utils/api';
 
 function AdminLayout({ children }) {
   const [sidebarOpen, setSidebarOpen] = useState(() => window.matchMedia('(min-width: 1024px)').matches);
+  const [backupLoading, setBackupLoading] = useState(false);
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useAuthStore();
@@ -37,6 +40,31 @@ function AdminLayout({ children }) {
     logout();
     toast.success('Sesión cerrada');
     navigate('/login');
+  };
+
+  const handleDatabaseBackup = async () => {
+    try {
+      setBackupLoading(true);
+      const response = await api.get('/backup/database', {
+        responseType: 'blob'
+      });
+
+      const blob = new Blob([response.data], { type: 'application/json' });
+      const url = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = url;
+      link.download = `mykonos-database-backup-${new Date().toISOString().slice(0, 10)}.json`;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(url);
+      toast.success('Database guardada en JSON');
+    } catch (error) {
+      console.error('Error descargando database:', error);
+      toast.error(error.response?.data?.message || 'No se pudo guardar la database');
+    } finally {
+      setBackupLoading(false);
+    }
   };
 
   const isActive = (path, exact = false) => {
@@ -129,6 +157,18 @@ function AdminLayout({ children }) {
                 <p className="text-white font-medium truncate">{user?.fullName}</p>
               </div>
             )}
+            <button
+              onClick={handleDatabaseBackup}
+              disabled={backupLoading}
+              className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-dark-700 transition-colors w-full text-left disabled:opacity-60 disabled:cursor-wait"
+            >
+              <Download size={20} className="text-neon-cyan" />
+              {sidebarOpen && (
+                <span className="text-gray-300">
+                  {backupLoading ? 'Guardando...' : 'Guardar database'}
+                </span>
+              )}
+            </button>
             <button
               onClick={handleLogout}
               className="flex items-center gap-3 px-4 py-3 rounded-lg hover:bg-dark-700 transition-colors w-full text-left"

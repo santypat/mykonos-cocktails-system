@@ -12,6 +12,7 @@ dist/
 build/
 frontend/dist/
 *.zip
+backups/
 
 # Logs
 logs/
